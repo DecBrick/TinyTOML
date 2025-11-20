@@ -34,29 +34,31 @@ program test
         options = input%get("options")
 
         call read_value(options%get("string_option", error = .false.), string_option)
+        print*, "String option:", string_option
+
         call read_value(options%get("float_option", error = .false.), float_option)
+        print*, "Float option: ", float_option
+
         call read_value(options%get("integer_option", error = .false.), integer_option)
+        print*, "Integer option: ", integer_option
+
         call read_value(options%get("array_option", error = .false.), array_option)
+        num_array_elements = size(array_option)
+        print*, "Length of array: ", num_array_elements
+        print*, "Array option: ", array_option
+
         call read_value(options%get("bool_option", error = .false.), bool_option)
+        print*, "Bool option: ", bool_option
+
         call read_value(&
             options%get("not_present_option", error = .false.), &
             not_present_option, &
             default = (/1.0_f64, 2.0_f64, 3.0_f64/)&
         )
+        print*, "Not present option: ", not_present_option
 
         more_options = input%get("more-options")
         call read_value(more_options%get("another_option"), another_option)
-
-        num_array_elements = size(array_option)
-
-        print*, "String option:", string_option
-        print*, "Float option: ", float_option
-        print*, "Integer option: ", integer_option
-        print*, "Length of array: ", num_array_elements
-        print*, "Array option: ", array_option
-        print*, "Bool option: ", bool_option
-        print*, "Not present option: ", not_present_option
-
         print*, "Another option: ", another_option
 
         fruits = input%get("fruits")
@@ -84,6 +86,17 @@ program test
         print*, " "
         do i = 1, num_children(arrays)
             print*, stringify(arrays%get(i))
+        end do
+    end block
+
+    block
+        type(toml_object):: arrays
+        integer(i32), allocatable:: arr(:)
+        arrays = input%get("long-arrays")
+        print*, " "
+        do i = 1, num_children(arrays)
+            call read_value(arrays%get("arr", error = .false.), arr)
+            write (*, "(A,G0,A,*(G0,:,','),A)") "Long array (len ", size(arr), "): [", arr, "]"
         end do
     end block
 end program

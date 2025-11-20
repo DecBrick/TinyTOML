@@ -642,14 +642,32 @@ module TinyTOML
         endif
     end function
 
+    function read_line(unit, start_pos) result (line)
+        integer(i32):: unit, start_pos, i
+        character(len = :), allocatable:: line
+        character:: c
+
+        i = start_pos
+        do
+            read(unit, pos=i) c
+            if (c == NEW_LINE("a")) then
+                exit
+            end if
+            i = i + 1
+        end do
+
+        allocate(character(i - start_pos):: line)
+        read(unit, pos=start_pos) line
+    end
+
     function tokenize(file) result(tokens)
         character(len = *), intent(in):: file
         type(toml_object), allocatable:: tokens(:), tmp(:)
-        character(len = 256):: ln
         character(len = :), allocatable:: key, val, typ, line
         type(toml_object):: pair
 
         integer(i32):: io, unit, nlines, i, ind, comment_ind, error_code
+        integer(i32):: start_pos, end_pos
         nlines = num_lines(file)
 
         allocate(tokens(nlines))
@@ -658,24 +676,27 @@ module TinyTOML
             return
         endif
 
-        open (newunit = unit, file = file, iostat = io)
+        open (newunit = unit, file = file, iostat = io, access='stream')
 
         ind = 0
+        start_pos = 1
         do i = 1, nlines
             ! Read a line from the file
-            read(unit, '(A)', iostat = io) ln
+            line = read_line(unit, start_pos)
+            start_pos = start_pos + len(line) + 1 ! Extra 1 to consume newline
 
             ! Find first occurance of a pound sign (comment) in the line
-            comment_ind = findfirst("#", ln)
+            comment_ind = findfirst("#", line)
             if (comment_ind == 0) then
-                ! Line has no comma. Just trim whitespace from line
-                line = strip(ln)
+                ! Line has no comment. Just trim whitespace from line
+                line = strip(line)
             else
-                line = strip(ln(1:comment_ind-1))
+                line = strip(line(1:comment_ind-1))
             endif
 
             ! strip all blank lines
             if (len(line) == 0) cycle
+
 
             ! Try parsing as key-value pair
             pair = parse_key_value_pair(line, i)
