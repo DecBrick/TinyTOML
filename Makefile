@@ -5,7 +5,7 @@ SRC=\
 	test/example.f90
 
 
-PROGRAM=toml.exe
+PROGRAM=toml
 PRG_OBJ=$(PROGRAM).o
 
 release:

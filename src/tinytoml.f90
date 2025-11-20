@@ -1,7 +1,7 @@
 module TinyTOML
-    ! TinyTOML v0.2.0
+    ! TinyTOML v0.2.1
     ! https://github.com/archermarx/TinyTOML
-    ! Copyright 2023, Thomas A. Marks, licensed under the MIT license.
+    ! Copyright 2025, Thomas A. Marks and contributors licensed under the MIT license.
     ! The full text of this license can be found in LICENSE.md in the root directory of this repository.
     ! This repository provides utilities for parsing TOML files for input reading
     ! When possible, try upgrading to TOML-f
@@ -116,7 +116,7 @@ module TinyTOML
 
     contains
 
-!=================String manipulation functions===============================
+!================ String manipulation functions ==============================
     pure logical function isdigit(d)
         character(len = 1), intent(in):: d
         isdigit = d >= "0" .and. d <= "9"
@@ -207,9 +207,9 @@ module TinyTOML
         close (unit)
     end function
 
-!=================End string manipulation functions===========================
+!================ End string manipulation functions ==========================
 
-!=================Error-handling routines=====================================
+!================ Error-handling routines ====================================
     subroutine toml_error(message, code)
         character(len = *), intent(in):: message
         integer(i32), intent(in):: code
@@ -240,9 +240,9 @@ module TinyTOML
         write(line_str, '(g0)') line
         call toml_error(strip(ERROR_MESSAGES(error_code)) // " (line " // strip(line_str) // ")", error_code)
     end subroutine
-!=================End error-handling routines=================================
+!================ End error-handling routines ================================
 
-!=================Routines for manipulating toml_object objects=================
+!================ Routines for manipulating `toml_object`s ===================
     pure integer(i32) function num_children(node)
         type(toml_object), intent(in):: node
         num_children = size(node%children)
@@ -621,9 +621,9 @@ module TinyTOML
         type(toml_object), allocatable:: children(:)
         allocate(children(0))
     end function
-!=================End poutines for manipulating toml_object objects=============
+!================ End routines for manipulating `toml_object`s =================
 
-!=================Parsing routines============================================
+!================ Parsing routines =============================================
     function parse_file(file) result(parse_tree)
         character(len = *), intent(in):: file
         type(toml_object):: parse_tree
@@ -644,7 +644,7 @@ module TinyTOML
 
     function tokenize(file) result(tokens)
         character(len = *), intent(in):: file
-        type(toml_object), allocatable:: tokens(:)
+        type(toml_object), allocatable:: tokens(:), tmp(:)
         character(len = 256):: ln
         character(len = :), allocatable:: key, val, typ, line
         type(toml_object):: pair
@@ -739,15 +739,18 @@ module TinyTOML
 
         close(unit)
 
-        tokens = tokens(1:ind)
+        call move_alloc(tokens, tmp)
+        allocate(tokens(ind))
+        tokens(1:ind) = tmp(1:ind)
 
     end function
 
     recursive function parse_tokens(tokens) result(nodes)
         type(toml_object):: tokens(:)
-        type(toml_object), allocatable:: nodes(:)
+        type(toml_object), allocatable:: nodes(:), tmp(:)
         type(toml_object):: node
         integer(i32):: num_tokens, i, n_children, ind
+
         num_tokens = size(tokens, 1)
         allocate(nodes(num_tokens))
 
@@ -786,7 +789,7 @@ module TinyTOML
                 n_children = 0
 
                 do
-                    ! tables terminate at EOF of at the beginning of another table
+                    ! tables terminate at EOF or at the beginning of another table
                     if (i + n_children + 1 > num_tokens) exit
                     if (tokens(i + n_children + 1)%type == "table" .or. tokens(i + n_children + 1)%type == "tablearray") exit
                     ! Increment the child we're on
@@ -834,7 +837,9 @@ module TinyTOML
             end select
         end do
 
-        nodes = nodes(1:ind)
+        call move_alloc(nodes, tmp)
+        allocate(nodes(ind))
+        nodes(1:ind) = tmp(1:ind)
 
     end function
 
@@ -1126,5 +1131,5 @@ module TinyTOML
         end do
         nodes = nodes(1:num_elements_found)
     end function
-!=================End parsing routines=========================================
+!================ End parsing routines ========================================
 end module
