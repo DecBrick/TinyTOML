@@ -194,19 +194,6 @@ module TinyTOML
 
     end function
 
-    integer(i32) function num_lines(file)
-        character(len = *):: file
-        integer(i32):: io, unit
-        num_lines = 0
-        open (newunit = unit, file = file, iostat = io)
-        do
-            read(unit,*,iostat=io)
-            if (io /= 0) exit
-            num_lines = num_lines + 1
-        end do
-        close (unit)
-    end function
-
 !================ End string manipulation functions ==========================
 
 !================ Error-handling routines ====================================
@@ -624,66 +611,90 @@ module TinyTOML
 !================ End routines for manipulating `toml_object`s =================
 
 !================ Parsing routines =============================================
-    function parse_file(file) result(parse_tree)
-        character(len = *), intent(in):: file
-        type(toml_object):: parse_tree
+
+    function read_file(file) result(contents)
+        character(len=*), intent(in):: file
+        character(len = :), allocatable:: contents
+        integer(i32):: io, unit, file_size
         logical:: exists
 
         inquire(file = file, exist = exists)
 
         if (exists) then
-            parse_tree%key = ""
-            parse_tree%value = ""
-            parse_tree%type = "table"
-            parse_tree%children = parse_tokens(tokenize(file))
+            open (newunit=unit, access='stream', file=file)
+            inquire(unit, size=file_size)
+            allocate(character(len=file_size)::contents)
+            read(unit, *) contents
+            close(unit)
         else
             write(stdout, *) "ERROR: File "// strip(file) // " not found."
             call exit(2)
         endif
-    end function
-
-    function read_line(unit, start_pos) result (line)
-        integer(i32):: unit, start_pos, i
-        character(len = :), allocatable:: line
-        character:: c
-
-        i = start_pos
-        do
-            read(unit, pos=i) c
-            if (c == NEW_LINE("a")) then
-                exit
-            end if
-            i = i + 1
-        end do
-
-        allocate(character(i - start_pos):: line)
-        read(unit, pos=start_pos) line
     end
 
-    function tokenize(file) result(tokens)
+    function parse_file(file) result(parse_tree)
         character(len = *), intent(in):: file
+        type(toml_object):: parse_tree
+
+        parse_tree = parse_string(read_file(file))
+
+    end function
+
+    function parse_string(toml_str) result(parse_tree)
+        character(len = *), intent(in)::toml_str
+        type(toml_object):: parse_tree
+
+        parse_tree%key = ""
+        parse_tree%value = ""
+        parse_tree%type = "table"
+        parse_tree%children = parse_tokens(tokenize(toml_str))
+    end function
+
+    function read_line(toml_str, start_pos) result (line)
+        character(len = *), intent(in):: toml_str
+        integer(i32), intent(in):: start_pos
+        character(len = :), allocatable:: line
+        integer(i32):: i, strlen
+        character:: nl = NEW_LINE('a')
+        logical::has_newline = .false.
+
+        strlen = len(toml_str)
+
+        do i = start_pos,strlen 
+            if (toml_str(i:i) == nl) then
+                has_newline = .true.
+                exit
+            endif
+        end do
+
+        if (has_newline) then
+            line = toml_str(start_pos:i-1)
+        else
+            line = toml_str(start_pos:i)
+        end if
+    end
+
+    function tokenize(toml_str) result(tokens)
+        character(len = *), intent(in):: toml_str
         type(toml_object), allocatable:: tokens(:), tmp(:)
         character(len = :), allocatable:: key, val, typ, line
         type(toml_object):: pair
 
-        integer(i32):: io, unit, nlines, i, ind, comment_ind, error_code
-        integer(i32):: start_pos, end_pos
-        nlines = num_lines(file)
+        integer(i32):: nlines, comment_ind, error_code
+        integer(i32):: line_start = 1, ind = 0, i = 0
 
-        allocate(tokens(nlines))
+        allocate(tokens(len(toml_str)))
 
-        if (nlines == 0) then
-            return
-        endif
 
-        open (newunit = unit, file = file, iostat = io, access='stream')
+        do
+            i = i + 1
+            if (line_start >= len(toml_str)) then
+                exit
+            endif
 
-        ind = 0
-        start_pos = 1
-        do i = 1, nlines
             ! Read a line from the file
-            line = read_line(unit, start_pos)
-            start_pos = start_pos + len(line) + 1 ! Extra 1 to consume newline
+            line = read_line(toml_str, line_start)
+            line_start = line_start + len(line) + 1 ! Extra 1 to consume newline
 
             ! Find first occurance of a pound sign (comment) in the line
             comment_ind = findfirst("#", line)
@@ -756,9 +767,8 @@ module TinyTOML
             if (ERROR_CODE /= success) then
                 call parse_error(ERROR_CODE, i)
             endif
-        end do
 
-        close(unit)
+        end do
 
         call move_alloc(tokens, tmp)
         allocate(tokens(ind))
