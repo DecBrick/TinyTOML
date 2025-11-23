@@ -95,6 +95,7 @@ module TinyTOML
         procedure, public:: stringify
         procedure, public:: get_key
         procedure, public:: get_ind
+        procedure, public:: has_key
         generic, public:: get => get_key, get_ind
     end type
 
