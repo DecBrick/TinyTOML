@@ -9,7 +9,7 @@ program test
     character(len = 32):: filename
     character:: nl
     integer(i32):: num_failed = 0, exit_code = 0
-    type(Testset):: ts_basics, ts_options, ts_arrays
+    type(Testset):: ts_basics, ts_options, ts_arrays, ts_floats
     logical:: verbose = .false.
 
     nl = new_line('a')
@@ -168,7 +168,66 @@ program test
         call assert_eq(ts_arrays, long_arr, long_arr_exp)
     end block
 
-    call run_and_exit((/ts_basics, ts_options, ts_arrays/))
+    ! Float parsing
+    block
+        type(toml_object):: float_obj
+        real(f64):: f, infinity = huge(1.0_f64)
+
+        ts_floats = Testset("Floats")
+    
+        float_obj = input%get("floats")
+
+        call read_value(float_obj%get("inf"), f)
+        call assert_gt(ts_floats, f, infinity)
+
+        call read_value(float_obj%get("pos_inf"), f)
+        call assert_gt(ts_floats, f, infinity)
+
+        call read_value(float_obj%get("neg_inf"), f)
+        call assert_lt(ts_floats, f, -infinity)
+
+        call read_value(float_obj%get("neg_nan"), f)
+        call assert(ts_floats, isnan(f))
+
+        call read_value(float_obj%get("pos_nan"), f)
+        call assert(ts_floats, isnan(f))
+
+        call read_value(float_obj%get("nan"), f)
+        call assert(ts_floats, isnan(f))
+
+        call read_value(float_obj%get("pos_zero"), f)
+        call assert_eq(ts_floats, f, 0.0_f64)
+
+        call read_value(float_obj%get("neg_zero"), f)
+        call assert_eq(ts_floats, f, -0.0_f64)
+
+        call read_value(float_obj%get("flt1"), f)
+        call assert_eq(ts_floats, f, 1.0_f64)
+
+        call read_value(float_obj%get("flt2"), f)
+        call assert_eq(ts_floats, f, 3.1415_f64)
+
+        call read_value(float_obj%get("flt3"), f)
+        call assert_eq(ts_floats, f, -0.01_f64)
+
+        call read_value(float_obj%get("flt4"), f)
+        call assert_eq(ts_floats, f, 5e22_f64)
+
+        call read_value(float_obj%get("flt5"), f)
+        call assert_eq(ts_floats, f, 1e6_f64)
+
+        call read_value(float_obj%get("flt6"), f)
+        call assert_eq(ts_floats, f, -2e-2_f64)
+
+        call read_value(float_obj%get("flt7"), f)
+        call assert_eq(ts_floats, f, 6.626e-34_f64)
+
+        call read_value(float_obj%get("flt8"), f)
+        call assert_eq(ts_floats, f, 224617.445991228_f64)
+
+    end block
+
+    call run_and_exit((/ts_basics, ts_options, ts_arrays, ts_floats/))
 
 end program
 
