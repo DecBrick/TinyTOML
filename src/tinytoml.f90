@@ -34,7 +34,7 @@ module TinyTOML
     integer(i32), parameter:: ERROR_LENGTH = 64
 
     ! List of error messages
-    character(len = *), dimension(1), parameter:: ERROR_MESSAGES(17) = [character(len = ERROR_LENGTH):: &
+    character(len = *), dimension(1), parameter:: ERROR_MESSAGES(20) = [character(len = ERROR_LENGTH):: &
         "General error", &
         "No equals sign for key-value pair", &
         "No value provided for key", &
@@ -51,7 +51,10 @@ module TinyTOML
         "Missing closing single quote in string", &
         "File not found", &
         "Invalid read", &
-        "Key not found" &
+        "Key not found", &
+        "Unrecognized token", &
+        "Empty decimal part in number", &
+        "Expected integer part in number" &
     ]
 
     ! List of corresponding error codes
@@ -74,7 +77,31 @@ module TinyTOML
         enumerator:: FILE_NOT_FOUND = 15
         enumerator:: INVALID_READ = 16
         enumerator:: KEY_NOT_FOUND = 17
+        enumerator:: UNRECOGNIZED_TOKEN = 18
+        enumerator:: MISSING_DECIMAL_PART = 19
+        enumerator:: EXPECTED_INTEGER_PART = 20
     end enum
+
+    ! Tokenizer
+    ! Kinds
+    enum, bind(c)
+        enumerator:: TOML_TokenKind = 0
+        enumerator:: TOML_TOKEN_ERROR, TOML_EOF, TOML_NEWLINE
+        enumerator:: TOML_LBRACKET, TOML_RBRACKET
+        enumerator:: TOML_LLBRACKET, TOML_RRBRACKET
+        enumerator:: TOML_LBRACE, TOML_RBRACE
+        enumerator:: TOML_COMMA, TOML_PERIOD, TOML_EQ
+        enumerator:: TOML_STRING, TOML_IDENT
+        enumerator:: TOML_INT_BIN, TOML_INT_OCT, TOML_INT_DEC, TOML_INT_HEX, TOML_FLOAT
+        enumerator:: TOML_TRUE, TOML_FALSE
+        enumerator:: TOML_COMMENT
+    end enum
+
+    type::toml_token
+        character(len=:), allocatable:: content
+        integer(kind(TOML_TokenKind)):: kind
+        integer(i32):: error_code
+    end type
 
     type, abstract:: toml_abstract_object
         character(len = :), allocatable:: key
@@ -118,9 +145,22 @@ module TinyTOML
         module procedure get_ind
     end interface
 
+    character, parameter:: c_newline = new_line('a')
+    character, parameter:: c_tab = char(9)
+
     contains
 
 !================ String manipulation functions ==============================
+    pure logical function is_ident_char(d)
+        character(len = 1), intent(in):: d
+        select case (d)
+        case ("'", '"', " ", c_tab, c_newline, "[", "]", ",", "=", "/", "\", "#", ".", "+", "-")
+            is_ident_char = .false.
+        case default
+            is_ident_char = .true.
+        end select
+    end function
+
     pure logical function is_digit(d)
         character(len = 1), intent(in):: d
         is_digit = (d .ge. "0") .and. (d .le. "9")
@@ -728,22 +768,338 @@ module TinyTOML
         integer(i32), intent(inout):: start_pos, line_num
         character(len = :), allocatable:: line
         integer(i32):: i, strlen
-        character:: nl = NEW_LINE('a')
-        logical::has_newline = .false.
 
-        strlen = len(toml_str)
-
-        do i = start_pos,strlen 
-            if (toml_str(i:i) == nl) then
-                has_newline = .true.
-                exit
-            endif
+        do i = start_pos,len(toml_str)
+            if (toml_str(i:i) == c_newline) exit
         end do
 
         line = toml_str(start_pos:i-1)
         start_pos = i + 1
         line_num = line_num + 1
-    end
+    end function read_line
+
+    pure subroutine consume_space(str, pos)
+        character(len = *), intent(in)::str
+        integer(i32), intent(inout):: pos
+
+        if (pos .le. len(str)) then
+            do while ((pos .le. len(str)) .and. &
+                      (str(pos:pos) == ' ' .or. str(pos:pos) == c_tab))
+                pos = pos + 1
+            end do
+        endif
+    end subroutine
+
+    pure subroutine read_error_token(str, ind, tok)
+        character(len = *), intent(in)::str
+        integer(i32), intent(inout):: ind
+        type(toml_token), intent(inout):: tok
+        integer(i32):: start_pos
+
+        ! Read until we hit a defined separator character
+        start_pos = ind
+        do ind = start_pos, len(str)
+            select case (str(ind:ind))
+            case (c_newline, c_tab, ' ', '[', ']', '{', '}', ',')
+                exit
+            end select
+        end do
+
+        tok%kind = TOML_TOKEN_ERROR
+        tok%content = str(start_pos:ind-1)
+
+    end subroutine
+
+    subroutine read_integer_part(str, ind, tok, signed)
+        character(len = *), intent(in):: str
+        integer(i32), intent(inout):: ind 
+        type(toml_token), intent(inout):: tok
+        character:: c
+        integer(i32):: num_start_pos
+        logical, intent(in), optional:: signed
+        logical:: underscore_allowed, sign_allowed, positive
+
+        underscore_allowed = .false.
+        positive = .true.
+
+        if (present(signed)) then
+            sign_allowed = signed
+        else
+            sign_allowed = .false.
+        end if
+
+        ! Check for leading sign
+        if (sign_allowed) then
+            if (str(ind:ind) == '+') then
+                ind = ind + 1
+            elseif (str(ind:ind) == '-') then
+                positive = .false.
+                ind = ind + 1
+            end if
+        end if 
+
+        tok%error_code = SUCCESS
+        num_start_pos = ind
+        ind = ind - 1
+
+        do while (ind + 1 .le. len(str))
+            ind = ind + 1
+            c = str(ind:ind)
+
+            if (c .eq. "_") then
+                if (underscore_allowed) then
+                    underscore_allowed = .false.
+                else
+                    tok%error_code = INVALID_UNDERSCORE_IN_NUMBER
+                    exit
+                endif
+            else if (c .eq. '.' .or. c .eq. ',' .or. isspace(c) .or. c .eq. ']' .or. c .eq. '}') then
+                exit
+            else if ((tok%kind .eq. TOML_INT_DEC .or. tok%kind .eq. TOML_FLOAT) .and. (c == 'e' .or. c == 'E')) then
+                exit
+            else if ((tok%kind .eq. TOML_INT_DEC .and. .not. is_digit(c)) .or. &
+                     (tok%kind .eq. TOML_INT_OCT .and. .not. is_octal(c)) .or. & 
+                     (tok%kind .eq. TOML_INT_BIN .and. .not. is_binary(c)) .or. &
+                     (tok%kind .eq. TOML_INT_HEX .and. .not. is_hex(c))) then
+                tok%error_code = INVALID_CHAR_IN_NUMBER
+                exit
+            else
+                if (.not. underscore_allowed) underscore_allowed = .true.
+            endif
+        end do
+
+        tok%content = str(num_start_pos:ind-1)
+
+        if (.not. positive) then
+            tok%content = "-" // tok%content
+        endif
+
+        if (len(tok%content) .eq. 0) then
+            tok%error_code = EXPECTED_INTEGER_PART
+        end if
+
+        if (tok%error_code .ne. SUCCESS) then
+            call read_error_token(str, ind, tok)
+        end if
+
+    end subroutine
+
+    subroutine read_number(str, ind, tok)
+        character(len = *), intent(in):: str
+        integer(i32), intent(inout):: ind 
+        type(toml_token), intent(inout):: tok
+        character:: c
+        logical:: decimal_found, exp_allowed, underscore_allowed, sign_allowed, positive 
+        integer(i32):: error_code, tok_start_pos, num_start_pos
+
+        decimal_found = .false.
+        exp_allowed = .false.
+        sign_allowed = .false.
+        positive = .true.
+
+        tok%kind = TOML_INT_DEC
+        tok%error_code = SUCCESS
+        tok_start_pos = ind
+
+        ! Check for leading sign
+        if (str(ind:ind) == '+') then
+            ind = ind + 1
+        elseif (str(ind:ind) == '-') then
+            positive = .false.
+            ind = ind + 1
+        end if
+
+        ! Check for nan or inf
+        if ((len(str) - ind) .ge. 2) then
+            if ((str(ind:ind+2) .eq. 'nan') .or. (str(ind:ind+2) .eq. 'inf')) then
+                tok%kind = TOML_FLOAT
+                num_start_pos = ind
+                ind = ind + 3
+                goto 999
+            end if
+        end if
+
+        ! Check for octal, hex, binary prefixes
+        if ((len(str) - ind) .ge. 2) then
+            if (str(ind:ind+1) .eq. '0x') then
+                tok%kind = TOML_INT_HEX
+                ind = ind + 2
+            else if (str(ind:ind+1) .eq. '0o') then
+                tok%kind = TOML_INT_OCT
+                ind = ind + 2
+            else if (str(ind:ind+1) .eq. '0b') then
+                tok%kind = TOML_INT_BIN
+                ind = ind + 2
+            end if
+        end if
+
+        num_start_pos = ind
+
+        ! Read integral part
+        call read_integer_part(str, ind, tok)
+
+        ! Check for decimal
+        if (str(ind:ind) .eq. '.') then
+            tok%kind = TOML_FLOAT
+            ind = ind + 1
+            call read_integer_part(str, ind, tok)
+            if (len(tok%content) == 0) then
+                tok%kind = TOML_TOKEN_ERROR
+                tok%error_code = MISSING_DECIMAL_PART
+            end if
+            if (tok%error_code .ne. SUCCESS) goto 999
+        end if
+
+        ! Check for exponent
+        if (str(ind:ind) .eq. 'e' .or. c .eq. "E") then
+            tok%kind = TOML_FLOAT
+            ind = ind + 1
+            if (str(ind:ind) .eq. '-') then
+                ind = ind + 1
+            else if (str(ind:ind) .eq. '+') then
+                ind = ind + 1
+            end if
+            call read_integer_part(str, ind, tok)
+        endif
+
+    999 tok%content = str(num_start_pos:ind-1)
+
+        if (.not. positive) then
+            tok%content = "-" // tok%content
+        endif
+
+        if (tok%error_code .eq. SUCCESS)  tok%content = clean_number(tok%content, tok%kind)
+
+        ind = ind - 1
+
+    end subroutine
+
+    subroutine read_token(str, ind, tok)
+        character(len = *), intent(in)::str
+        integer(i32), intent(inout):: ind
+        type(toml_token), intent(inout):: tok
+        character(len = :), allocatable:: tmp
+        integer(i32):: start_pos
+        character:: c, sign
+
+        call consume_space(str, ind)
+
+        tok%kind = TOML_EOF
+
+        if (ind > len(str)) then
+            goto 1
+        endif
+
+        c = str(ind:ind)
+
+        select case(c)
+        case ('[')
+            tok%kind = TOML_LBRACKET
+            if (ind .lt. len(str)) then
+                if (str(ind+1:ind+1) == '[') then
+                    tok%kind = TOML_LLBRACKET
+                    ind = ind + 1
+                endif
+            endif
+        case (']')
+            tok%kind = TOML_RBRACKET
+
+            if (ind .lt. len(str)) then
+                if (str(ind+1:ind+1) == ']') then
+                    tok%kind = TOML_RRBRACKET
+                    ind = ind + 1
+                endif
+            endif
+
+        case ('{')
+            tok%kind = TOML_LBRACE
+        case ('}')
+            tok%kind = TOML_RBRACE
+        case ('=')
+            tok%kind = TOML_EQ
+        case (',')
+            tok%kind = TOML_COMMA
+        case ('.')
+            tok%kind = TOML_PERIOD
+        case ('#')
+            tok%kind = TOML_COMMENT
+            ind = ind + 1    ! Consume comma
+            start_pos = ind
+
+            do while (str(ind:ind) .ne. c_newline)
+                ind = ind + 1
+                if (ind > len(str)) then
+                    exit
+                end if
+            end do
+
+            tok%content = str(start_pos:ind-1)
+
+            ! Back up so we find the newline
+            if (ind <= len(str)) then
+                ind = ind - 1
+            endif
+
+        case ('"')
+            tok%kind = TOML_STRING
+            ind = ind + 1    ! Consume quote
+            start_pos = ind
+            do while (str(ind:ind) .ne. '"')
+                ind = ind + 1
+                if (ind > len(str)) then
+                    tok%error_code = MISSING_CLOSING_DOUBLE_QUOTE
+                    exit
+                end if
+            end do
+
+            tok%content = str(start_pos:ind-1)
+
+        case (c_newline)
+            tok%kind = TOML_NEWLINE
+        case default
+            if (is_ident_char(c) .and. .not. is_digit(c)) then
+                ! Read identifier
+                start_pos = ind
+                tok%kind = TOML_IDENT
+                do while (is_ident_char(str(ind:ind))) 
+                    ind = ind + 1
+                    if (ind > len(str)) then
+                        exit
+                    endif
+                end do
+
+                tok%content = str(start_pos:ind-1)
+
+                ! Back up so we find the newline
+                if (ind <= len(str)) then
+                    ind = ind - 1
+                endif
+
+                select case(tok%content)
+                case ("true")
+                    tok%kind = TOML_TRUE
+                    deallocate(tok%content)
+                case ("false")
+                    tok%kind = TOML_FALSE
+                    deallocate(tok%content)
+                case ("inf", "nan")
+                    tok%kind = TOML_FLOAT
+                end select
+            else if (is_digit(c) .or. c == '-' .or. c == '+') then
+                ! Read number
+                call read_number(str, ind, tok)
+            else
+                tok%kind = TOML_TOKEN_ERROR 
+                call read_error_token(str, ind, tok)
+            end if
+        end select
+
+        ind = ind + 1
+
+        1 return
+
+    end subroutine
+
 
     function tokenize(toml_str) result(tokens)
         character(len = *), intent(in):: toml_str
@@ -777,7 +1133,6 @@ module TinyTOML
             endif
 
             ! strip all blank lines
-
 
             ! Try parsing as key-value pair
             pair = parse_key_value_pair(line, line_num)
@@ -1049,20 +1404,41 @@ module TinyTOML
         ! replacing e or E with d and D
         character(len = *), intent(in):: str
         character(len = :), allocatable:: num
+        integer(i32), intent(in):: type
+        integer(i32):: i
+        character:: c
+
+        num = ""
+        do i = 1, len(str)
+            c = str(i:i)
+            if (type == TOML_FLOAT .and. (c == "e" .or. c == "E")) then
+                num = num // "d"
+            elseif (c /= "_" .and. c /= "+") then
+                num = num // c
+            endif
+        end do
+    end function
+
+    pure function clean_number_2(str, type) result(num)
+        ! Make a number readable as 64-bit by Fortran by removing underscores and
+        ! replacing e or E with d and D
+        character(len = *), intent(in):: str
+        character(len = :), allocatable:: num
         character(len = *), intent(in):: type
-        character(len = 1):: next
+        character:: c
         integer(i32):: i
 
         num = ""
         do i = 1, len(str)
-            next = str(i:i)
-            if (type == "float" .and. (next == "e" .or. next == "E")) then
+            c = str(i:i)
+            if (type == "float" .and. (c == "e" .or. c == "E")) then
                 num = num // "d"
-            elseif (next /= "_" .and. next /= "+") then
-                num = num // next
+            elseif (c /= "_" .and. c /= "+") then
+                num = num // c
             endif
         end do
     end function
+
 
     function parse_value(value) result(parse_result)
         character(len = *), intent(in):: value
@@ -1094,7 +1470,7 @@ module TinyTOML
         elseif (val == "inf" .or. val == "+inf" .or. val == "-inf" .or. &
                 val == "nan" .or. val == "+nan" .or. val == "-nan") then
             typ = "float"
-            val = clean_number(val, typ)
+            val = clean_number_2(val, typ)
 
         ! Check if value starts with an integer part
         elseif(isnumber) then
@@ -1238,7 +1614,7 @@ module TinyTOML
             else
                 typ = "int_" // int_kind
             endif
-            parse_result%value = clean_number(tmp, typ)
+            parse_result%value = clean_number_2(tmp, typ)
         else
             parse_result%value = tmp
         endif

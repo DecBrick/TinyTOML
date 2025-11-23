@@ -5,10 +5,356 @@ program test
     implicit none
 
     type(toml_object):: input
-    type(Testset):: ts_basics, ts_options, ts_arrays, ts_floats, ts_ints
+    type(Testset), allocatable:: testsets(:)
     logical:: verbose = .false.
 
     input = parse_file("test/tests.toml")
+    allocate(testsets(0))
+
+    ! Tokenizer
+    block
+        type(Testset):: ts
+        character(len=:), allocatable:: content
+        type(toml_token):: token
+        integer(i32):: ind = 1
+
+        call ts%init("Tokenizer")
+
+        content = ""
+        call read_token(content, ind, token)
+        call assert_eq(ts, token%kind, TOML_EOF)
+
+        content = &
+            "[]= , " // c_newline // '   { s1 = "string 1", s2 = "string 2"} # a comment' // c_newline // &
+            "# another comment # with a hash"   // c_newline // c_tab // &
+            "bool_true = true"                  // c_newline // &
+            "bool_false = false"                // c_newline // &
+            "[[table.array]]"                   // c_newline // &
+            "dec_int = 10_000"                  // c_newline // &
+            "hex_int = 0xdeadbeef"              // c_newline // &
+            "bin_int = 0b01"                    // c_newline // &
+            "oct_int = 0o755"                   // c_newline // &
+            "f1 = 3.14159e0"                    // c_newline // &
+            "f2 = inf"                          // c_newline // &
+            "f3 = nan"                          // c_newline // &
+            "i1 = +0x2f"                        // c_newline // &
+            "f4 = -12.8"                        // c_newline // &
+            "f5 = +nan"                         // c_newline // &
+            "f6 = -inf"                         // c_newline // &
+            ".7"                                // c_newline // &
+            "7."                                // c_newline // &
+            "1dzuew"                            // c_newline // &
+            "3.e+20"                            // c_newline // &
+            "+2e.+0"                            // c_newline // &
+            "//"
+
+        call read_token(content, ind, token)
+        call assert_eq(ts, token%kind, TOML_LBRACKET)
+
+        call read_token(content, ind, token)
+        call assert_eq(ts, token%kind, TOML_RBRACKET)
+
+        call read_token(content, ind, token)
+        call assert_eq(ts, token%kind, TOML_EQ)
+
+        call read_token(content, ind, token)
+        call assert_eq(ts, token%kind, TOML_COMMA)
+
+        call read_token(content, ind, token)
+        call assert_eq(ts, token%kind, TOML_NEWLINE)
+
+        call read_token(content, ind, token)
+        call assert_eq(ts, token%kind, TOML_LBRACE)
+
+        call read_token(content, ind, token)
+        call assert_eq(ts, token%kind, TOML_IDENT)
+        call assert_eq(ts, token%content, "s1")
+
+        call read_token(content, ind, token)
+        call assert_eq(ts, token%kind, TOML_EQ)
+
+        call read_token(content, ind, token)
+        call assert_eq(ts, token%kind, TOML_STRING)
+        call assert_eq(ts, token%content, "string 1")
+
+        call read_token(content, ind, token)
+        call assert_eq(ts, token%kind, TOML_COMMA)
+
+        call read_token(content, ind, token)
+        call assert_eq(ts, token%kind, TOML_IDENT)
+        call assert_eq(ts, token%content, "s2")
+
+        call read_token(content, ind, token)
+        call assert_eq(ts, token%kind, TOML_EQ)
+
+        call read_token(content, ind, token)
+        call assert_eq(ts, token%kind, TOML_STRING)
+        call assert_eq(ts, token%content, "string 2")
+
+        call read_token(content, ind, token)
+        call assert_eq(ts, token%kind, TOML_RBRACE)
+    
+        call read_token(content, ind, token)
+        call assert_eq(ts, token%kind, TOML_COMMENT)
+        call assert_eq(ts, token%content, " a comment")
+
+        call read_token(content, ind, token)
+        call assert_eq(ts, token%kind, TOML_NEWLINE)
+
+        call read_token(content, ind, token)
+        call assert_eq(ts, token%kind, TOML_COMMENT)
+        call assert_eq(ts, token%content, " another comment # with a hash")
+
+        call read_token(content, ind, token)
+        call assert_eq(ts, token%kind, TOML_NEWLINE)
+
+        call read_token(content, ind, token)
+        call assert_eq(ts, token%kind, TOML_IDENT)
+        call assert_eq(ts, token%content, "bool_true")
+
+        call read_token(content, ind, token)
+        call assert_eq(ts, token%kind, TOML_EQ)
+
+        call read_token(content, ind, token)
+        call assert_eq(ts, token%kind, TOML_TRUE)
+
+        call read_token(content, ind, token)
+        call assert_eq(ts, token%kind, TOML_NEWLINE)
+
+        call read_token(content, ind, token)
+        call assert_eq(ts, token%kind, TOML_IDENT)
+        call assert_eq(ts, token%content, "bool_false")
+
+        call read_token(content, ind, token)
+        call assert_eq(ts, token%kind, TOML_EQ)
+
+        call read_token(content, ind, token)
+        call assert_eq(ts, token%kind, TOML_FALSE)
+
+        call read_token(content, ind, token)
+        call assert_eq(ts, token%kind, TOML_NEWLINE)
+
+        call read_token(content, ind, token)
+        call assert_eq(ts, token%kind, TOML_LLBRACKET)
+
+        call read_token(content, ind, token)
+        call assert_eq(ts, token%kind, TOML_IDENT)
+        call assert_eq(ts, token%content, "table")
+
+        call read_token(content, ind, token)
+        call assert_eq(ts, token%kind, TOML_PERIOD)
+
+        call read_token(content, ind, token)
+        call assert_eq(ts, token%kind, TOML_IDENT)
+        call assert_eq(ts, token%content, "array")
+
+        call read_token(content, ind, token)
+        call assert_eq(ts, token%kind, TOML_RRBRACKET)
+
+        call read_token(content, ind, token)
+        call assert_eq(ts, token%kind, TOML_NEWLINE)
+
+        call read_token(content, ind, token)
+        call assert_eq(ts, token%kind, TOML_IDENT)
+        call assert_eq(ts, token%content, "dec_int")
+
+        call read_token(content, ind, token)
+        call assert_eq(ts, token%kind, TOML_EQ)
+
+        call read_token(content, ind, token)
+        call assert_eq(ts, token%kind, TOML_INT_DEC)
+        call assert_eq(ts, token%content, "10000")
+
+        call read_token(content, ind, token)
+        call assert_eq(ts, token%kind, TOML_NEWLINE)
+
+        call read_token(content, ind, token)
+        call assert_eq(ts, token%kind, TOML_IDENT)
+        call assert_eq(ts, token%content, "hex_int")
+
+        call read_token(content, ind, token)
+        call assert_eq(ts, token%kind, TOML_EQ)
+
+        call read_token(content, ind, token)
+        call assert_eq(ts, token%kind, TOML_INT_HEX)
+        call assert_eq(ts, token%content, "deadbeef")
+
+        call read_token(content, ind, token)
+        call assert_eq(ts, token%kind, TOML_NEWLINE)
+
+        call read_token(content, ind, token)
+        call assert_eq(ts, token%kind, TOML_IDENT)
+        call assert_eq(ts, token%content, "bin_int")
+
+        call read_token(content, ind, token)
+        call assert_eq(ts, token%kind, TOML_EQ)
+
+        call read_token(content, ind, token)
+        call assert_eq(ts, token%kind, TOML_INT_BIN)
+        call assert_eq(ts, token%content, "01")
+
+        call read_token(content, ind, token)
+        call assert_eq(ts, token%kind, TOML_NEWLINE)
+
+        call read_token(content, ind, token)
+        call assert_eq(ts, token%kind, TOML_IDENT)
+        call assert_eq(ts, token%content, "oct_int")
+
+        call read_token(content, ind, token)
+        call assert_eq(ts, token%kind, TOML_EQ)
+
+        call read_token(content, ind, token)
+        call assert_eq(ts, token%kind, TOML_INT_OCT)
+        call assert_eq(ts, token%content, "755")
+
+        call read_token(content, ind, token)
+        call assert_eq(ts, token%kind, TOML_NEWLINE)
+
+        call read_token(content, ind, token)
+        call assert_eq(ts, token%kind, TOML_IDENT)
+        call assert_eq(ts, token%content, "f1")
+
+        call read_token(content, ind, token)
+        call assert_eq(ts, token%kind, TOML_EQ)
+
+        call read_token(content, ind, token)
+        call assert_eq(ts, token%kind, TOML_FLOAT)
+        call assert_eq(ts, token%content, "3.14159d0")
+
+        call read_token(content, ind, token)
+        call assert_eq(ts, token%kind, TOML_NEWLINE)
+
+        call read_token(content, ind, token)
+        call assert_eq(ts, token%kind, TOML_IDENT)
+        call assert_eq(ts, token%content, "f2")
+
+        call read_token(content, ind, token)
+        call assert_eq(ts, token%kind, TOML_EQ)
+
+        call read_token(content, ind, token)
+        call assert_eq(ts, token%kind, TOML_FLOAT)
+        call assert_eq(ts, token%content, "inf")
+
+        call read_token(content, ind, token)
+        call assert_eq(ts, token%kind, TOML_NEWLINE)
+
+        call read_token(content, ind, token)
+        call assert_eq(ts, token%kind, TOML_IDENT)
+        call assert_eq(ts, token%content, "f3")
+
+        call read_token(content, ind, token)
+        call assert_eq(ts, token%kind, TOML_EQ)
+
+        call read_token(content, ind, token)
+        call assert_eq(ts, token%kind, TOML_FLOAT)
+        call assert_eq(ts, token%content, "nan")
+
+        call read_token(content, ind, token)
+        call assert_eq(ts, token%kind, TOML_NEWLINE)
+
+        call read_token(content, ind, token)
+        call assert_eq(ts, token%kind, TOML_IDENT)
+        call assert_eq(ts, token%content, "i1")
+
+        call read_token(content, ind, token)
+        call assert_eq(ts, token%kind, TOML_EQ)
+
+        call read_token(content, ind, token)
+        call assert_eq(ts, token%kind, TOML_INT_HEX)
+        call assert_eq(ts, token%content, "2f")
+
+        call read_token(content, ind, token)
+        call assert_eq(ts, token%kind, TOML_NEWLINE)
+
+        call read_token(content, ind, token)
+        call assert_eq(ts, token%kind, TOML_IDENT)
+        call assert_eq(ts, token%content, "f4")
+
+        call read_token(content, ind, token)
+        call assert_eq(ts, token%kind, TOML_EQ)
+
+        call read_token(content, ind, token)
+        call assert_eq(ts, token%kind, TOML_FLOAT)
+        call assert_eq(ts, token%content, "-12.8")
+
+        call read_token(content, ind, token)
+        call assert_eq(ts, token%kind, TOML_NEWLINE)
+
+        call read_token(content, ind, token)
+        call assert_eq(ts, token%kind, TOML_IDENT)
+        call assert_eq(ts, token%content, "f5")
+
+        call read_token(content, ind, token)
+        call assert_eq(ts, token%kind, TOML_EQ)
+
+        call read_token(content, ind, token)
+        call assert_eq(ts, token%kind, TOML_FLOAT)
+        call assert_eq(ts, token%content, "nan")
+
+        call read_token(content, ind, token)
+        call assert_eq(ts, token%kind, TOML_NEWLINE)
+
+        call read_token(content, ind, token)
+        call assert_eq(ts, token%kind, TOML_IDENT)
+        call assert_eq(ts, token%content, "f6")
+
+        call read_token(content, ind, token)
+        call assert_eq(ts, token%kind, TOML_EQ)
+
+        call read_token(content, ind, token)
+        call assert_eq(ts, token%kind, TOML_FLOAT)
+        call assert_eq(ts, token%content, "-inf")
+
+        call read_token(content, ind, token)
+        call assert_eq(ts, token%kind, TOML_NEWLINE)
+
+        call read_token(content, ind, token)
+        call assert_eq(ts, token%kind, TOML_PERIOD)
+
+        call read_token(content, ind, token)
+        call assert_eq(ts, token%kind, TOML_INT_DEC)
+        call assert_eq(ts, token%content, "7")
+
+        call read_token(content, ind, token)
+        call assert_eq(ts, token%kind, TOML_NEWLINE)
+
+        call read_token(content, ind, token)
+        call assert_eq(ts, token%kind, TOML_TOKEN_ERROR)
+        call assert_eq(ts, token%content, "7.")
+
+        call read_token(content, ind, token)
+        call assert_eq(ts, token%kind, TOML_NEWLINE)
+
+        call read_token(content, ind, token)
+        call assert_eq(ts, token%kind, TOML_TOKEN_ERROR)
+        call assert_eq(ts, token%content, "1dzuew")
+
+        call read_token(content, ind, token)
+        call assert_eq(ts, token%kind, TOML_NEWLINE)
+
+        call read_token(content, ind, token)
+        call assert_eq(ts, token%kind, TOML_TOKEN_ERROR)
+        call assert_eq(ts, token%content, "3.e+20")
+
+        call read_token(content, ind, token)
+        call assert_eq(ts, token%kind, TOML_NEWLINE)
+
+        call read_token(content, ind, token)
+        call assert_eq(ts, token%kind, TOML_TOKEN_ERROR)
+        call assert_eq(ts, token%content, "2e.+0")
+
+        call read_token(content, ind, token)
+        call assert_eq(ts, token%kind, TOML_NEWLINE)
+
+        call read_token(content, ind, token)
+        call assert_eq(ts, token%kind, TOML_TOKEN_ERROR)
+        call assert_eq(ts, token%content, "//")
+
+        call read_token(content, ind, token)
+        call assert_eq(ts, token%kind, TOML_EOF)
+
+        testsets = [testsets, ts]
+    end block
 
     ! Some basic key-value pair tests
     block
@@ -21,33 +367,36 @@ program test
         integer(i32):: int_arr_exp(3) = (/1, 2000, 50000000/)
         integer(i32):: int_arr_ml_exp(3) = (/ 1, 2, 3 /)
         real(f64):: float_arr_exp(3) = (/-1.d0, 3.14159d0, 9.1d-31/)
+        type(Testset):: ts
 
-        call init_testset(ts_basics, "Basics")
+        call ts%init("Basics")
 
         basics = input%get("basics")
         call read_value(basics%get("int_var"), int_var)
         if (verbose) print "(A,g0)", "int_var: ", int_var
-        call assert_eq(ts_basics, int_var, 2)
+        call assert_eq(ts, int_var, 2)
 
         call read_value(basics%get("float_var"), float_var)
         if (verbose) print "(A,g0)", "float_var: ", float_var
-        call assert_eq(ts_basics, float_var, 10.0_f64)
+        call assert_eq(ts, float_var, 10.0_f64)
 
         call read_value(basics%get("string_var"), string_var)
         if (verbose) print "(A,g0)", "string_var: ", string_var
-        call assert_eq(ts_basics, string_var, "string")
+        call assert_eq(ts, string_var, "string")
 
         call read_value(basics%get("int_arr"), int_arr)
         if (verbose) print "(A,*(g0,:,','),A)", "int_arr: [", int_arr, "]"
-        call assert_eq(ts_basics, int_arr, int_arr_exp)
+        call assert_eq(ts, int_arr, int_arr_exp)
 
         call read_value(basics%get("float_arr"), float_arr)
         if (verbose) print "(A,*(g0,:,','),A)", "float_arr: [", float_arr, "]"
-        call assert_eq(ts_basics, float_arr, float_arr_exp)
+        call assert_eq(ts, float_arr, float_arr_exp)
 
         call read_value(basics%get("int_arr_multiline"), int_arr_multiline)
         if (verbose) print "(A,*(g0,:,','),A)", "int_arr_multiline: [", int_arr_multiline, "]"
-        call assert_eq(ts_basics, int_arr_multiline, int_arr_ml_exp)
+        call assert_eq(ts, int_arr_multiline, int_arr_ml_exp)
+
+        testsets = [testsets, ts]
     end block
 
     block
@@ -59,39 +408,39 @@ program test
         real(f64):: float_option, mass_g, fruit_mass_exp(4)
         integer(i32):: integer_option, another_option, test_ind, i
         logical:: bool_option
-        type(Result), allocatable:: tests(:)
+        type(Testset):: ts
 
-        call init_testset(ts_options, "OPtions")
-    
+        call ts%init("Options")
+
         options = input%get("options")
 
         call read_value(options%get("string_option", error = .false.), string_option)
-        call assert_eq(ts_options, string_option, "a string")
+        call assert_eq(ts, string_option, "a string")
 
         call read_value(options%get("float_option", error = .false.), float_option)
-        call assert(ts_options, isnan(float_option))
+        call assert(ts, isnan(float_option))
 
         call read_value(options%get("bool_option", error = .false.), bool_option)
-        call assert_eq(ts_options, bool_option, .false.)
+        call assert_eq(ts, bool_option, .false.)
 
         call read_value(options%get("integer_option", error = .false.), integer_option)
-        call assert_eq(ts_options, integer_option, 2)
+        call assert_eq(ts, integer_option, 2)
 
         call read_value(options%get("array_option", error = .false.), array_option)
-        call assert_eq(ts_options, array_option, (/1.0_f64, -0.1e20_f64/))
+        call assert_eq(ts, array_option, (/1.0_f64, -0.1e20_f64/))
 
         call read_value(&
             options%get("not_present_option", error = .false.), &
             not_present_option, &
             default = (/1.0_f64, 2.0_f64, 3.0_f64/)&
         )
-        call assert_eq(ts_options, not_present_option, (/1.0_f64, 2.0_f64, 3.0_f64/))
+        call assert_eq(ts, not_present_option, (/1.0_f64, 2.0_f64, 3.0_f64/))
 
         more_options = input%get("more-options")
         call read_value(more_options%get("another_option"), another_option)
-        call assert_eq(ts_options, another_option, 2)
+        call assert_eq(ts, another_option, 2)
 
-        call assert(ts_options, input%has_key("fruits")) 
+        call assert(ts, input%has_key("fruits")) 
         fruits = input%get("fruits")
 
         fruit_name_exp = (/"apple ", "orange", "banana", "pomelo"/)
@@ -99,25 +448,25 @@ program test
         fruit_in_stock_exp = (/1, 3, 5, -1/)
         fruit_color_exp = (/"red   ", "orange", "yellow", "yellow"/)
 
-        call assert_eq(ts_options, num_children(fruits), 4)
+        call assert_eq(ts, num_children(fruits), 4)
 
         do i = 1, num_children(fruits)
             fruit = get(input%get("fruits"), i)
 
-            call assert(ts_options, fruit%has_key("properties"))
+            call assert(ts, fruit%has_key("properties"))
             properties = fruit%get("properties")
 
             call read_value(fruit%get("type"), fruit_name)
-            call assert_eq(ts_options, fruit_name, strip(fruit_name_exp(i)))
+            call assert_eq(ts, fruit_name, strip(fruit_name_exp(i)))
 
             call read_value(properties%get("in_stock"), in_stock)
-            call assert_eq(ts_options, in_stock, fruit_in_stock_exp(i))
+            call assert_eq(ts, in_stock, fruit_in_stock_exp(i))
 
             call read_value(properties%get("color"), fruit_color)
-            call assert_eq(ts_options, fruit_color, strip(fruit_color_exp(i)))
+            call assert_eq(ts, fruit_color, strip(fruit_color_exp(i)))
 
             call read_value(properties%get("mass_g"), mass_g)
-            call assert_eq(ts_options, mass_g, fruit_mass_exp(i))
+            call assert_eq(ts, mass_g, fruit_mass_exp(i))
 
             if (verbose) print*, ""
             if (verbose) print*, "Fruit: ", i
@@ -127,95 +476,100 @@ program test
             if (verbose) print*, "In stock: ", in_stock
         end do
 
+        testsets = [testsets, ts]
+
     end block
 
     block
         type(toml_object):: arrays, arr3
         integer(i32), allocatable:: arr1(:), long_arr(:)
-        integer(i32):: test_ind = 1
         integer(i32):: j, long_arr_exp(256) = (/ (j, j=1, 256) /)
         integer(i32):: arr1_exp(3)
+        type(Testset):: ts
 
-        call init_testset(ts_arrays, "Arrays")
-        call assert(ts_arrays, has_key(input, "complex-arrays"))
+        call ts%init("Arrays")
+        call assert(ts, has_key(input, "complex-arrays"))
 
         arrays = input%get("complex-arrays")
 
-        arr1_exp = (/1,2,3/)
-
-        call assert(ts_arrays, arrays%has_key("arr1"))
+        call assert(ts, arrays%has_key("arr1"))
         call read_value(arrays%get("arr1"), arr1)
-        call assert_eq(ts_arrays, arr1, arr1_exp)
+        call assert_eq(ts, arr1, [1, 2, 3])
 
-        call assert(ts_arrays, arrays%has_key("arr2"))
-        call assert_eq(ts_arrays, num_children(arrays%get("arr2")), 0)
+        call assert(ts, arrays%has_key("arr2"))
+        call assert_eq(ts, num_children(arrays%get("arr2")), 0)
 
-        call assert(ts_arrays, arrays%has_key("arr3"))
+        call assert(ts, arrays%has_key("arr3"))
         arr3 = arrays%get("arr3")
-        call assert_eq(ts_arrays, num_children(arr3), 3)
+        call assert_eq(ts, num_children(arr3), 3)
         ! TODO: string arrays don't work
-        call assert_eq(ts_arrays, arr3%value, '["ball", "red", "element",]')
+        call assert_eq(ts, arr3%value, '["ball", "red", "element",]')
 
-        call assert(ts_arrays, arrays%has_key("long_arr"))
+        call assert(ts, arrays%has_key("long_arr"))
         call read_value(arrays%get("long_arr"), long_arr)
-        call assert_eq(ts_arrays, long_arr, long_arr_exp)
+        call assert_eq(ts, long_arr, long_arr_exp)
+
+        testsets = [testsets, ts]
     end block
 
     ! Float parsing
     block
         type(toml_object):: float_obj
         real(f64):: f, infinity = huge(1.0_f64)
+        type(Testset):: ts
 
-        call init_testset(ts_floats, "Floats")
+        call ts%init("Floats")
         float_obj = input%get("floats")
 
         call read_value(float_obj%get("inf"), f)
-        call assert_gt(ts_floats, f, infinity)
+        call assert_gt(ts, f, infinity)
 
         call read_value(float_obj%get("pos_inf"), f)
-        call assert_gt(ts_floats, f, infinity)
+        call assert_gt(ts, f, infinity)
 
         call read_value(float_obj%get("neg_inf"), f)
-        call assert_lt(ts_floats, f, -infinity)
+        call assert_lt(ts, f, -infinity)
 
         call read_value(float_obj%get("neg_nan"), f)
-        call assert(ts_floats, isnan(f))
+        call assert(ts, isnan(f))
 
         call read_value(float_obj%get("pos_nan"), f)
-        call assert(ts_floats, isnan(f))
+        call assert(ts, isnan(f))
 
         call read_value(float_obj%get("nan"), f)
-        call assert(ts_floats, isnan(f))
+        call assert(ts, isnan(f))
 
         call read_value(float_obj%get("pos_zero"), f)
-        call assert_eq(ts_floats, f, 0.0_f64)
+        call assert_eq(ts, f, 0.0_f64)
 
         call read_value(float_obj%get("neg_zero"), f)
-        call assert_eq(ts_floats, f, -0.0_f64)
+        call assert_eq(ts, f, -0.0_f64)
 
         call read_value(float_obj%get("flt1"), f)
-        call assert_eq(ts_floats, f, 1.0_f64)
+        call assert_eq(ts, f, 1.0_f64)
 
         call read_value(float_obj%get("flt2"), f)
-        call assert_eq(ts_floats, f, 3.1415_f64)
+        call assert_eq(ts, f, 3.1415_f64)
 
         call read_value(float_obj%get("flt3"), f)
-        call assert_eq(ts_floats, f, -0.01_f64)
+        call assert_eq(ts, f, -0.01_f64)
 
         call read_value(float_obj%get("flt4"), f)
-        call assert_eq(ts_floats, f, 5e22_f64)
+        call assert_eq(ts, f, 5e22_f64)
 
         call read_value(float_obj%get("flt5"), f)
-        call assert_eq(ts_floats, f, 1e6_f64)
+        call assert_eq(ts, f, 1e6_f64)
 
         call read_value(float_obj%get("flt6"), f)
-        call assert_eq(ts_floats, f, -2e-2_f64)
+        call assert_eq(ts, f, -2e-2_f64)
 
         call read_value(float_obj%get("flt7"), f)
-        call assert_eq(ts_floats, f, 6.626e-34_f64)
+        call assert_eq(ts, f, 6.626e-34_f64)
 
         call read_value(float_obj%get("flt8"), f)
-        call assert_eq(ts_floats, f, 224617.445991228_f64)
+        call assert_eq(ts, f, 224617.445991228_f64)
+
+        testsets = [testsets, ts]
 
     end block
 
@@ -223,61 +577,64 @@ program test
     block
         type(toml_object):: int_obj
         integer(i64):: num
+        type(Testset):: ts
 
-        call init_testset(ts_ints, "Integers")
+        call ts%init("Integers")
         int_obj = input%get("integers")
 
         call read_value(int_obj%get("int1"), num)
-        call assert_eq(ts_ints, num, 99_i64)
+        call assert_eq(ts, num, 99_i64)
 
         call read_value(int_obj%get("int2"), num)
-        call assert_eq(ts_ints, num, 42_i64)
+        call assert_eq(ts, num, 42_i64)
 
         call read_value(int_obj%get("int3"), num)
-        call assert_eq(ts_ints, num, 0_i64)
+        call assert_eq(ts, num, 0_i64)
 
         call read_value(int_obj%get("int4"), num)
-        call assert_eq(ts_ints, num, -17_i64)
+        call assert_eq(ts, num, -17_i64)
 
         call read_value(int_obj%get("int5"), num)
-        call assert_eq(ts_ints, num, 1000_i64)
+        call assert_eq(ts, num, 1000_i64)
 
         call read_value(int_obj%get("int6"), num)
-        call assert_eq(ts_ints, num, 5349221_i64)
+        call assert_eq(ts, num, 5349221_i64)
 
         call read_value(int_obj%get("int7"), num)
-        call assert_eq(ts_ints, num, 5349221_i64)
+        call assert_eq(ts, num, 5349221_i64)
 
         call read_value(int_obj%get("int8"), num)
-        call assert_eq(ts_ints, num, 12345_i64)
+        call assert_eq(ts, num, 12345_i64)
 
         ! Hexadecimals
         call read_value(int_obj%get("hex0"), num)
-        call assert_eq(ts_ints, num, int(z'A', kind=i64))
+        call assert_eq(ts, num, int(z'A', kind=i64))
 
         call read_value(int_obj%get("hex1"), num)
-        call assert_eq(ts_ints, num, int(z'DEADBEEF', kind=i64))
+        call assert_eq(ts, num, int(z'DEADBEEF', kind=i64))
 
         call read_value(int_obj%get("hex2"), num)
-        call assert_eq(ts_ints, num, int(z'DEADBEEF', kind=i64))
+        call assert_eq(ts, num, int(z'DEADBEEF', kind=i64))
 
         call read_value(int_obj%get("hex3"), num)
-        call assert_eq(ts_ints, num, int(z'DEADBEEF', kind=i64))
+        call assert_eq(ts, num, int(z'DEADBEEF', kind=i64))
 
         ! Octals
         call read_value(int_obj%get("oct1"), num)
-        call assert_eq(ts_ints, num, int(o'01234567', kind=i64))
+        call assert_eq(ts, num, int(o'01234567', kind=i64))
 
         call read_value(int_obj%get("oct2"), num)
-        call assert_eq(ts_ints, num, int(o'755', kind=i64))
+        call assert_eq(ts, num, int(o'755', kind=i64))
 
         ! Binaries
         call read_value(int_obj%get("bin1"), num)
-        call assert_eq(ts_ints, num, int(b'11010110', kind=i64))
+        call assert_eq(ts, num, int(b'11010110', kind=i64))
+
+        testsets = [testsets, ts]
 
     end block
 
-    call run_and_exit((/ts_basics, ts_options, ts_arrays, ts_floats, ts_ints/))
+    call run_and_exit(testsets)
 
 end program
 

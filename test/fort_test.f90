@@ -22,24 +22,22 @@ module fort_test
 
     private
 
-    public:: Testset, Result, new_testset, run_all, run_and_exit, &
+    public:: Testset, TestResult, run_all, run_and_exit, &
              assert, assert_eq, assert_neq, assert_gt, assert_geq, assert_lt, assert_leq, assert_approx, &
              style_text, get_color_code, logical_to_int
 
-    type Result
+    type TestResult
         character(len = :), allocatable:: assertion
         logical:: passed
     end type
 
     type Testset
         character(len = :), allocatable:: name
-        type(Result), dimension(:), allocatable:: tests
+        type(TestResult), dimension(:), allocatable:: tests
         integer, private:: num_tests, num_failed
+    contains
+        procedure, public:: init=>init_testset
     end type
-
-    interface Testset
-        module procedure:: new_testset
-    end interface
 
     character(len = *), parameter:: FG_COLOR_SUMMARY = "light white"
     character(len = *), parameter:: FG_COLOR_PASS = "light green"
@@ -154,9 +152,10 @@ module fort_test
     !============================================================
     !               testset construction
     !============================================================
-    type(Testset) function new_testset(name, cap) result(ts)
-        character(len = *), optional:: name
-        integer, optional:: cap
+    subroutine init_testset(ts, name, cap)
+        class(Testset), intent(inout):: ts
+        character(len = *), intent(in), optional:: name
+        integer, intent(in), optional:: cap
 
 
         if (present(name)) then
@@ -175,12 +174,12 @@ module fort_test
         ts%num_failed = 0
         ts%num_tests = 0
 
-    end function
+    end subroutine
 
     subroutine append_result(ts, res)
         type(Testset), intent(inout):: ts
-        type(Result), intent(in):: res
-        type(Result), allocatable:: tmp(:)
+        type(TestResult), intent(in):: res
+        type(TestResult), allocatable:: tmp(:)
         integer(i32):: cap
 
         cap = size(ts%tests)
@@ -200,7 +199,7 @@ module fort_test
     subroutine assert(ts, bool)
         type(Testset), intent(inout):: ts
         logical, intent(in):: bool
-        type(Result)::res
+        type(TestResult)::res
 
         res%assertion = to_string(bool)
         res%passed = bool
@@ -212,7 +211,7 @@ module fort_test
         type(Testset), intent(inout):: ts
         character(len = *):: arg1_str, arg2_str, comparision
         logical:: passed
-        type(Result):: res
+        type(TestResult):: res
 
         res%assertion = trim(adjustl(arg1_str))//" "//comparision//" "//trim(adjustl(arg2_str))
         res%passed = passed
@@ -925,7 +924,7 @@ module fort_test
     !       functions for printing and styling test results
     !============================================================
     subroutine print_result_msg(my_result, test_number)
-        type(Result), intent(in)::my_result
+        type(TestResult), intent(in)::my_result
         integer, intent(in):: test_number
         character(len = :), allocatable:: output_string, test_name_string
         character(len = 4):: test_number_string
