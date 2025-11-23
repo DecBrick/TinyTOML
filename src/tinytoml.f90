@@ -9,11 +9,15 @@ module TinyTOML
     ! https://github.com/toml-f/toml-f
     !
     ! ================NOT CURRENTLY SUPPORTED =====================
+    ! Heterogeneous arrays
+    ! Arrays of strings
     ! Nested arrays
     ! Nested tables (i.e. tab1.tab2)
     ! Dates and times
     ! Binary, Hexadecimal, and octal literals
     ! Multi-line strings
+    ! Escape characters in strings
+    
     use, intrinsic:: iso_fortran_env, only : &
         stderr => error_unit, &
         stdin => input_unit, &
@@ -390,9 +394,11 @@ module TinyTOML
         if (use_default(node, present(default))) then
             val = default; return
         endif
+
         n = num_children(node)
 
         allocate(val(n))
+
         do i = 1, n
             call read_value(node%get(i), val(i))
         end do
@@ -407,9 +413,11 @@ module TinyTOML
         if (use_default(node, present(default))) then
             val = default; return
         endif
+
         n = num_children(node)
 
         allocate(val(n))
+
         do i = 1, n
             call read_value(node%get(i), val(i))
         end do
@@ -424,9 +432,11 @@ module TinyTOML
         if (use_default(node, present(default))) then
             val = default; return
         endif
+
         n = num_children(node)
 
         allocate(val(n))
+
         do i = 1, n
             call read_value(node%get(i), val(i))
         end do
@@ -621,10 +631,12 @@ module TinyTOML
         inquire(file = file, exist = exists)
 
         if (exists) then
-            open (newunit=unit, access='stream', file=file)
+            open( newunit=unit, access='stream', &
+                  file=file, action='read', form='unformatted')
+
             inquire(unit, size=file_size)
-            allocate(character(len=file_size)::contents)
-            read(unit, *) contents
+            allocate(character(file_size)::contents)
+            read(unit) contents
             close(unit)
         else
             write(stdout, *) "ERROR: File "// strip(file) // " not found."
@@ -634,9 +646,12 @@ module TinyTOML
 
     function parse_file(file) result(parse_tree)
         character(len = *), intent(in):: file
+        character(len = :), allocatable:: file_contents
         type(toml_object):: parse_tree
 
-        parse_tree = parse_string(read_file(file))
+        file_contents = read_file(file)
+
+        parse_tree = parse_string(file_contents)
 
     end function
 
@@ -667,11 +682,7 @@ module TinyTOML
             endif
         end do
 
-        if (has_newline) then
-            line = toml_str(start_pos:i-1)
-        else
-            line = toml_str(start_pos:i)
-        end if
+        line = toml_str(start_pos:i-1)
     end
 
     function tokenize(toml_str) result(tokens)
