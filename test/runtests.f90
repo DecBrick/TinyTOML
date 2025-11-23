@@ -223,34 +223,58 @@ program test
     ! Int parsing
     block
         type(toml_object):: int_obj
-        integer(i32):: num
+        integer(i64):: num
 
         ts_ints = Testset("Integers")
         int_obj = input%get("integers")
 
         call read_value(int_obj%get("int1"), num)
-        call assert_eq(ts_ints, num, 99)
+        call assert_eq(ts_ints, num, 99_i64)
 
         call read_value(int_obj%get("int2"), num)
-        call assert_eq(ts_ints, num, 42)
+        call assert_eq(ts_ints, num, 42_i64)
 
         call read_value(int_obj%get("int3"), num)
-        call assert_eq(ts_ints, num, 0)
+        call assert_eq(ts_ints, num, 0_i64)
 
         call read_value(int_obj%get("int4"), num)
-        call assert_eq(ts_ints, num, -17)
+        call assert_eq(ts_ints, num, -17_i64)
 
         call read_value(int_obj%get("int5"), num)
-        call assert_eq(ts_ints, num, 1000)
+        call assert_eq(ts_ints, num, 1000_i64)
 
         call read_value(int_obj%get("int6"), num)
-        call assert_eq(ts_ints, num, 5349221)
+        call assert_eq(ts_ints, num, 5349221_i64)
 
         call read_value(int_obj%get("int7"), num)
-        call assert_eq(ts_ints, num, 5349221)
+        call assert_eq(ts_ints, num, 5349221_i64)
 
         call read_value(int_obj%get("int8"), num)
-        call assert_eq(ts_ints, num, 12345)
+        call assert_eq(ts_ints, num, 12345_i64)
+
+        ! Hexadecimals
+        call read_value(int_obj%get("hex0"), num)
+        call assert_eq(ts_ints, num, int(z'A', kind=i64))
+
+        call read_value(int_obj%get("hex1"), num)
+        call assert_eq(ts_ints, num, int(z'DEADBEEF', kind=i64))
+
+        call read_value(int_obj%get("hex2"), num)
+        call assert_eq(ts_ints, num, int(z'DEADBEEF', kind=i64))
+
+        call read_value(int_obj%get("hex3"), num)
+        call assert_eq(ts_ints, num, int(z'DEADBEEF', kind=i64))
+
+        ! Octals
+        call read_value(int_obj%get("oct1"), num)
+        call assert_eq(ts_ints, num, int(o'01234567', kind=i64))
+
+        call read_value(int_obj%get("oct2"), num)
+        call assert_eq(ts_ints, num, int(o'755', kind=i64))
+
+        ! Binaries
+        call read_value(int_obj%get("bin1"), num)
+        call assert_eq(ts_ints, num, int(b'11010110', kind=i64))
 
     end block
 

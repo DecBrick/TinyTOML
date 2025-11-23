@@ -14,7 +14,6 @@ module TinyTOML
     ! Nested arrays
     ! Nested tables (i.e. tab1.tab2)
     ! Dates and times
-    ! Binary, Hexadecimal, and octal literals
     ! Multi-line strings
     ! Escape characters in strings
     
@@ -122,9 +121,28 @@ module TinyTOML
     contains
 
 !================ String manipulation functions ==============================
-    pure logical function isdigit(d)
+    pure logical function is_digit(d)
         character(len = 1), intent(in):: d
-        isdigit = (d .ge. "0") .and. (d .le. "9")
+        is_digit = (d .ge. "0") .and. (d .le. "9")
+    end function
+
+    pure logical function is_binary(d)
+        character(len = 1), intent(in):: d
+        is_binary = (d .ge. "0") .and. (d .le. "1")
+    end function
+
+    pure logical function is_octal(d)
+        character(len = 1), intent(in):: d
+        is_octal = (d .ge. "0") .and. (d .le. "7")
+    end function
+
+    pure logical function is_hex(d)
+        character(len = 1), intent(in):: d
+        logical:: digit, lc, uc
+        digit = (d .ge. "0") .and. (d .le. "9")
+        lc = (d .ge. "a") .and. (d .le. "f")
+        uc = (d .ge. "A") .and. (d .le. "F")
+        is_hex = digit .or. lc .or. uc
     end function
 
     pure logical function isspace(c)
@@ -321,7 +339,7 @@ module TinyTOML
         endif
 
         select case(node%type)
-        case("int", "float")
+        case("int_hex", "int_bin", "int_oct", "int_dec", "float")
             read(node%value, *) val
         case default
             call invalid_read_error("32-bit float", node)
@@ -338,7 +356,7 @@ module TinyTOML
         endif
 
         select case(node%type)
-        case("int", "float")
+        case("int_hex", "int_bin", "int_oct", "int_dec", "float")
             read(node%value, *) val
         case default
             call invalid_read_error("64-bit float", node)
@@ -355,8 +373,14 @@ module TinyTOML
         endif
 
         select case(node%type)
-        case("int")
-            read(node%value, *) val
+        case("int_dec")
+            read(node%value, "(I64)") val
+        case("int_hex")
+            read(node%value, "(Z64)") val
+        case("int_oct")
+            read(node%value, "(O64)") val
+        case("int_bin")
+            read(node%value, "(B64)") val
         case default
             call invalid_read_error("32-bit integer", node)
         end select
@@ -372,8 +396,14 @@ module TinyTOML
         endif
 
         select case(node%type)
-        case("int")
-            read(node%value, *) val
+        case("int_dec")
+            read(node%value, "(I64)") val
+        case("int_hex")
+            read(node%value, "(Z64)") val
+        case("int_oct")
+            read(node%value, "(O64)") val
+        case("int_bin")
+            read(node%value, "(B64)") val
         case default
             call invalid_read_error("64-bit integer", node)
         end select
@@ -1014,18 +1044,19 @@ module TinyTOML
         pair%line_num = line_number
     end function
 
-    pure function clean_number(str) result(num)
+    pure function clean_number(str, type) result(num)
         ! Make a number readable as 64-bit by Fortran by removing underscores and
         ! replacing e or E with d and D
         character(len = *), intent(in):: str
         character(len = :), allocatable:: num
+        character(len = *), intent(in):: type
         character(len = 1):: next
         integer(i32):: i
 
         num = ""
         do i = 1, len(str)
             next = str(i:i)
-            if (next == "e" .or. next == "E") then
+            if (type == "float" .and. (next == "e" .or. next == "E")) then
                 num = num // "d"
             elseif (next /= "_" .and. next /= "+") then
                 num = num // next
@@ -1049,9 +1080,9 @@ module TinyTOML
         !extra if statement needed to handle single length integers 
         isnumber = .false.
         if ((len(val) >= 2) .and. (val(1:1) == "+" .or. val(1:1) == "-")) then !check for signs
-            isnumber = isdigit(val(2:2))
+            isnumber = is_digit(val(2:2))
         else  
-            isnumber = isdigit(val(1:1)) 
+            isnumber = is_digit(val(1:1)) 
         endif
 
         ! Check if value is a bool
@@ -1063,7 +1094,7 @@ module TinyTOML
         elseif (val == "inf" .or. val == "+inf" .or. val == "-inf" .or. &
                 val == "nan" .or. val == "+nan" .or. val == "-nan") then
             typ = "float"
-            val = clean_number(val)
+            val = clean_number(val, typ)
 
         ! Check if value starts with an integer part
         elseif(isnumber) then
@@ -1117,10 +1148,11 @@ module TinyTOML
     pure function parse_number(str) result(parse_result)
         character(len = *), intent(in):: str
         type(toml_object):: parse_result
-        character(len = :), allocatable:: typ
+        character(len = :), allocatable:: typ, tmp
         character(len = 1), allocatable:: next
         logical:: decimal_point_found, exponent_found, underscore_allowed, plusminus_allowed
-        integer(i32):: l, ind, error_code
+        character(len = 3):: int_kind
+        integer(i32):: ind, l, error_code
 
         decimal_point_found = .false.
         exponent_found = .false.
@@ -1129,14 +1161,32 @@ module TinyTOML
 
         l = len(str)
 
+        ! Check for octal, hex, binary
+        if (l .gt. 2 .and. str(1:2) .eq. '0x') then
+            int_kind = "hex"
+        else if (l .gt. 2 .and. str(1:2) .eq. '0o') then
+            int_kind = "oct"
+        else if (l .gt. 2 .and. str(1:2) .eq. '0b') then
+            int_kind = "bin"
+        else
+            int_kind = "dec"
+        endif
+
+        if (int_kind .eq. "dec") then
+            ind = 0
+        else
+            ind = 2
+        endif
+
         typ = "unknown"
         error_code = SUCCESS
+        tmp = str(ind+1:)
 
         ind = 0
-        do while (ind+1 <= l)
+        do while (ind+1 .le. len(tmp))
             ind = ind + 1
-            next = str(ind:ind)
-            if (next == ".") then
+            next = tmp(ind:ind)
+            if (next .eq. ".") then
                 if (decimal_point_found) then
                     error_code = ONLY_ONE_DECIMAL_POINT
                     exit
@@ -1144,8 +1194,8 @@ module TinyTOML
                     decimal_point_found = .true.
                     cycle
                 endif
-            elseif (next == "e" .or. next == "E") then
-                if (exponent_found .or. ind == l) then
+            elseif (int_kind .eq. "dec" .and. (next .eq. "e" .or. next .eq. "E")) then
+                if (exponent_found .or. ind .eq. l) then
                     error_code = INVALID_CHAR_IN_NUMBER
                     exit
                 else
@@ -1165,7 +1215,11 @@ module TinyTOML
                     exit
                 endif
                 plusminus_allowed = .false.
-            elseif (.not. isdigit(next)) then
+            elseif ((int_kind .eq. "dec" .and. .not. is_digit(next)) .or. &
+                    (int_kind .eq. "oct" .and. .not. is_octal(next)) .or. & 
+                    (int_kind .eq. "bin" .and. .not. is_binary(next)) .or. &
+                    (int_kind .eq. "hex" .and. .not. is_hex(next))) then
+
                 error_code = INVALID_CHAR_IN_NUMBER
                 exit
             else
@@ -1182,11 +1236,11 @@ module TinyTOML
             if  (decimal_point_found .or. exponent_found) then
                 typ = "float"
             else
-                typ = "int"
+                typ = "int_" // int_kind
             endif
-            parse_result%value = clean_number(str)
+            parse_result%value = clean_number(tmp, typ)
         else
-            parse_result%value = str
+            parse_result%value = tmp
         endif
 
         parse_result%type = typ
