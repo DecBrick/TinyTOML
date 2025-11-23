@@ -22,7 +22,7 @@ program test
         integer(i32):: int_arr_ml_exp(3) = (/ 1, 2, 3 /)
         real(f64):: float_arr_exp(3) = (/-1.d0, 3.14159d0, 9.1d-31/)
 
-        ts_basics = Testset("Basics")
+        call init_testset(ts_basics, "Basics")
 
         basics = input%get("basics")
         call read_value(basics%get("int_var"), int_var)
@@ -61,7 +61,7 @@ program test
         logical:: bool_option
         type(Result), allocatable:: tests(:)
 
-        ts_options = Testset("Options")
+        call init_testset(ts_options, "OPtions")
     
         options = input%get("options")
 
@@ -136,8 +136,7 @@ program test
         integer(i32):: j, long_arr_exp(256) = (/ (j, j=1, 256) /)
         integer(i32):: arr1_exp(3)
 
-        ts_arrays = Testset("Arrays")
-
+        call init_testset(ts_arrays, "Arrays")
         call assert(ts_arrays, has_key(input, "complex-arrays"))
 
         arrays = input%get("complex-arrays")
@@ -167,7 +166,7 @@ program test
         type(toml_object):: float_obj
         real(f64):: f, infinity = huge(1.0_f64)
 
-        ts_floats = Testset("Floats")
+        call init_testset(ts_floats, "Floats")
         float_obj = input%get("floats")
 
         call read_value(float_obj%get("inf"), f)
@@ -225,7 +224,7 @@ program test
         type(toml_object):: int_obj
         integer(i64):: num
 
-        ts_ints = Testset("Integers")
+        call init_testset(ts_ints, "Integers")
         int_obj = input%get("integers")
 
         call read_value(int_obj%get("int1"), num)

@@ -22,7 +22,7 @@ module fort_test
 
     private
 
-    public:: Testset, Result, new_testset, run_all, run_and_exit, &
+    public:: Testset, Result, init_testset, run_all, run_and_exit, &
              assert, assert_eq, assert_neq, assert_gt, assert_geq, assert_lt, assert_leq, assert_approx, &
              style_text, get_color_code, logical_to_int
 
@@ -36,10 +36,6 @@ module fort_test
         type(Result), dimension(:), allocatable:: tests
         integer, private:: num_tests, num_failed
     end type
-
-    interface Testset
-        module procedure:: new_testset
-    end interface
 
     character(len = *), parameter:: FG_COLOR_SUMMARY = "light white"
     character(len = *), parameter:: FG_COLOR_PASS = "light green"
@@ -154,10 +150,9 @@ module fort_test
     !============================================================
     !               testset construction
     !============================================================
-    type(Testset) function new_testset(name, cap) result(ts)
+    subroutine init_testset(ts, name)
         character(len = *), optional:: name
-        integer, optional:: cap
-
+        type(Testset):: ts
 
         if (present(name)) then
             ts%name = name
@@ -165,35 +160,16 @@ module fort_test
             ts%name = "noname"
         endif
 
-
-        if (present(cap)) then
-            allocate(ts%tests(cap))
-        else
-            allocate(ts%tests(16))
-        endif 
+        allocate(ts%tests(0))
 
         ts%num_failed = 0
-        ts%num_tests = 0
-
-    end function
+    end subroutine
 
     subroutine append_result(ts, res)
         type(Testset), intent(inout):: ts
         type(Result), intent(in):: res
-        type(Result), allocatable:: tmp(:)
-        integer(i32):: cap
 
-        cap = size(ts%tests)
-    
-        if (ts%num_tests .eq. cap) then
-            call move_alloc(ts%tests, tmp)
-            allocate(ts%tests(2*cap))
-            ts%tests(1:cap) = tmp(1:cap)
-        endif
-
-        ts%num_tests = ts%num_tests + 1
-        ts%tests(ts%num_tests) = res
-
+        ts%tests = [ts%tests, res]
         if (.not. res%passed) ts%num_failed = ts%num_failed + 1
     end subroutine
 
@@ -233,7 +209,7 @@ module fort_test
 
         ! Get testset dimensions for printing
         do i = 1, size(testsets)
-            num_total = testsets(i)%num_tests
+            num_total = size(testsets(i)%tests)
             num_fail  = testsets(i)%num_failed
             num_pass  = num_total - num_fail
 
@@ -999,7 +975,7 @@ module fort_test
         character(len = column_widths(4)):: num_total_str
         integer(i32):: i, num_pass, num_fail, num_tests
 
-        num_tests = ts%num_tests
+        num_tests = size(ts%tests)
         num_fail = ts%num_failed
         num_pass = num_tests - num_fail
 
