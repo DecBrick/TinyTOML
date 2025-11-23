@@ -5,14 +5,8 @@ program test
     implicit none
 
     type(toml_object):: input
-    integer(i32):: status, i
-    character(len = 32):: filename
-    character:: nl
-    integer(i32):: num_failed = 0, exit_code = 0
-    type(Testset):: ts_basics, ts_options, ts_arrays, ts_floats
+    type(Testset):: ts_basics, ts_options, ts_arrays, ts_floats, ts_ints
     logical:: verbose = .false.
-
-    nl = new_line('a')
 
     input = parse_file("test/tests.toml")
 
@@ -63,7 +57,7 @@ program test
         integer(i32):: num_array_elements, in_stock, fruit_in_stock_exp(4)
         real(f64), allocatable:: array_option(:), not_present_option(:)
         real(f64):: float_option, mass_g, fruit_mass_exp(4)
-        integer(i32):: integer_option, another_option, test_ind
+        integer(i32):: integer_option, another_option, test_ind, i
         logical:: bool_option
         type(Result), allocatable:: tests(:)
 
@@ -174,7 +168,6 @@ program test
         real(f64):: f, infinity = huge(1.0_f64)
 
         ts_floats = Testset("Floats")
-    
         float_obj = input%get("floats")
 
         call read_value(float_obj%get("inf"), f)
@@ -227,7 +220,41 @@ program test
 
     end block
 
-    call run_and_exit((/ts_basics, ts_options, ts_arrays, ts_floats/))
+    ! Int parsing
+    block
+        type(toml_object):: int_obj
+        integer(i32):: num
+
+        ts_ints = Testset("Integers")
+        int_obj = input%get("integers")
+
+        call read_value(int_obj%get("int1"), num)
+        call assert_eq(ts_ints, num, 99)
+
+        call read_value(int_obj%get("int2"), num)
+        call assert_eq(ts_ints, num, 42)
+
+        call read_value(int_obj%get("int3"), num)
+        call assert_eq(ts_ints, num, 0)
+
+        call read_value(int_obj%get("int4"), num)
+        call assert_eq(ts_ints, num, -17)
+
+        call read_value(int_obj%get("int5"), num)
+        call assert_eq(ts_ints, num, 1000)
+
+        call read_value(int_obj%get("int6"), num)
+        call assert_eq(ts_ints, num, 5349221)
+
+        call read_value(int_obj%get("int7"), num)
+        call assert_eq(ts_ints, num, 5349221)
+
+        call read_value(int_obj%get("int8"), num)
+        call assert_eq(ts_ints, num, 12345)
+
+    end block
+
+    call run_and_exit((/ts_basics, ts_options, ts_arrays, ts_floats, ts_ints/))
 
 end program
 
