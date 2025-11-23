@@ -123,7 +123,12 @@ module TinyTOML
 !================ String manipulation functions ==============================
     pure logical function isdigit(d)
         character(len = 1), intent(in):: d
-        isdigit = d >= "0" .and. d <= "9"
+        isdigit = (d .ge. "0") .and. (d .le. "9")
+    end function
+
+    pure logical function isspace(c)
+        character(len = 1), intent(in):: c
+        isspace = (c .eq. ' ') .or. (c .eq. new_line('a')) .or. (c .eq. char(9))
     end function
 
     pure integer(i32) function findfirst(needle, haystack)
@@ -141,11 +146,34 @@ module TinyTOML
         end do
     end function
 
-    pure function strip(str) result(s)
+    function strip(str) result(s)
         ! Strip leading and trailing whitespace from input string str
         character(len = *), intent(in):: str
         character(len = :), allocatable:: s
-        s = trim(adjustl(str))
+        integer(i32):: iL, iR
+
+        iL=1
+        iR=len(str)
+    
+        if (len(str) == 0) then
+            return
+        endif
+
+        do iL=1, len(str) 
+            if (.not. isspace(str(iL:iL))) then
+                exit
+            endif
+        end do
+
+        if (iL .lt. iR) then
+            do iR = len(str), iL, -1
+                if (.not. isspace(str(iR:iR))) then
+                    exit
+                endif
+            end do
+        end if
+
+        s = str(iL:iR)
     end function
 
     pure integer(i32) function count(str, ch)
@@ -179,7 +207,6 @@ module TinyTOML
         allocate(split_str(num_substrings))
 
         ! Use internal list-directed io to read comma-separated values
-        !read(str, *) split_str_tmp
         dlm_ind = 1
         ind = 1
         do i = 1, length
@@ -665,9 +692,9 @@ module TinyTOML
         parse_tree%children = parse_tokens(tokenize(toml_str))
     end function
 
-    function read_line(toml_str, start_pos) result (line)
+    function read_line(toml_str, start_pos, line_num) result (line)
         character(len = *), intent(in):: toml_str
-        integer(i32), intent(in):: start_pos
+        integer(i32), intent(inout):: start_pos, line_num
         character(len = :), allocatable:: line
         integer(i32):: i, strlen
         character:: nl = NEW_LINE('a')
@@ -683,6 +710,8 @@ module TinyTOML
         end do
 
         line = toml_str(start_pos:i-1)
+        start_pos = i + 1
+        line_num = line_num + 1
     end
 
     function tokenize(toml_str) result(tokens)
@@ -692,20 +721,20 @@ module TinyTOML
         type(toml_object):: pair
 
         integer(i32):: nlines, comment_ind, error_code
-        integer(i32):: line_start = 1, ind = 0, i = 0
+        integer(i32):: line_start = 1, num_tokens = 0, line_num = 0
+
+        logical:: in_array = .false.
 
         allocate(tokens(len(toml_str)))
 
-
         do
-            i = i + 1
             if (line_start >= len(toml_str)) then
                 exit
             endif
 
             ! Read a line from the file
-            line = read_line(toml_str, line_start)
-            line_start = line_start + len(line) + 1 ! Extra 1 to consume newline
+            line = read_line(toml_str, line_start, line_num)
+            if (len(line) == 0) cycle
 
             ! Find first occurance of a pound sign (comment) in the line
             comment_ind = findfirst("#", line)
@@ -717,17 +746,42 @@ module TinyTOML
             endif
 
             ! strip all blank lines
-            if (len(line) == 0) cycle
 
 
             ! Try parsing as key-value pair
-            pair = parse_key_value_pair(line, i)
+            pair = parse_key_value_pair(line, line_num)
             error_code = pair%error_code
 
             if (error_code == SUCCESS) then
-                ind = ind + 1
-                tokens(ind) = pair
-                tokens(ind)%line_num = i
+                num_tokens = num_tokens + 1
+                tokens(num_tokens) = pair
+                tokens(num_tokens)%line_num = line_num
+
+            elseif (error_code == NO_CLOSING_BRACKET_ARRAY) then
+
+                ! Read lines until we find one that ends in a right bracket
+                do
+
+                    if (line_start .ge. len(toml_str)) then
+                        exit
+                    end if
+
+                    line = read_line(toml_str, line_start, line_num)
+                    if (len(line) == 0) cycle
+
+                    line = strip(line)
+
+                    pair%value = pair%value // line
+
+                    if (line(len(line):len(line)) .eq. ']') then 
+                        num_tokens = num_tokens + 1
+                        tokens(num_tokens) = pair
+                        tokens(num_tokens)%line_num = line_num
+                        error_code = SUCCESS
+                        exit
+                    end if
+
+                end do
 
             elseif (error_code == NO_EQUALS_SIGN_IN_KEY) then
                 key = line
@@ -736,10 +790,10 @@ module TinyTOML
                 ! Check for table header
                 if (key(1:1) /= "[") then
                     ! Check for blank line
-                    if (len(key) == 0 .and. ind > 0) then
+                    if (len(key) == 0 .and. num_tokens > 0) then
                         ! Don't bother recording multiple blank lines
                         ! Blank lines with comments don't count
-                        if (tokens(ind)%type == "blank" .or. comment_ind > 0) cycle
+                        if (tokens(num_tokens)%type == "blank" .or. comment_ind > 0) cycle
                         typ = "blank"
                     else
                         error_code = INVALID_ENTRY
@@ -767,23 +821,23 @@ module TinyTOML
                 if (typ /= "unknown") error_code = SUCCESS
 
                 if (error_code == SUCCESS) then
-                    ind = ind + 1
-                    tokens(ind)%key = strip(key)
-                    tokens(ind)%value = strip(val)
-                    tokens(ind)%type = typ
-                    tokens(ind)%line_num = i
+                    num_tokens = num_tokens + 1
+                    tokens(num_tokens)%key = strip(key)
+                    tokens(num_tokens)%value = strip(val)
+                    tokens(num_tokens)%type = typ
+                    tokens(num_tokens)%line_num = line_num
                 endif
             endif
 
             if (ERROR_CODE /= success) then
-                call parse_error(ERROR_CODE, i)
+                call parse_error(ERROR_CODE, line_num)
             endif
 
         end do
 
         call move_alloc(tokens, tmp)
-        allocate(tokens(ind))
-        tokens(1:ind) = tmp(1:ind)
+        allocate(tokens(num_tokens))
+        tokens(1:num_tokens) = tmp(1:num_tokens)
 
     end function
 
@@ -1045,10 +1099,9 @@ module TinyTOML
             endif
         ! Check if value is an array
         elseif (val(1:1) == "[") then
+            typ = "array"
             if (val(len(val):len(val)) .ne. "]") then
                 error_code = NO_CLOSING_BRACKET_ARRAY
-            else
-                typ = "array"
             endif
         endif
 

@@ -1,7 +1,0 @@
-int_var = 2
-float_var = 10.0
-string_var = "string"
-int_arr = [1, 2_000, 50_000_000]
-float_arr = [-1.0, 3.14159, 9.1e-31]
-
-
