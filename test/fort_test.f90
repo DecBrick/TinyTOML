@@ -22,7 +22,7 @@ module fort_test
 
     private
 
-    public:: TestSet, Result, new_testset, run_all, run_and_exit, &
+    public:: Testset, Result, new_testset, run_all, run_and_exit, &
              assert, assert_eq, assert_neq, assert_gt, assert_geq, assert_lt, assert_leq, assert_approx, &
              style_text, get_color_code, logical_to_int
 
@@ -31,11 +31,15 @@ module fort_test
         logical:: passed
     end type
 
-    type TestSet
+    type Testset
         character(len = :), allocatable:: name
-        type(Result), dimension(:), allocatable:: test_list
-        integer:: num_passed, num_failed
+        type(Result), dimension(:), allocatable:: tests
+        integer, private:: num_tests, num_failed
     end type
+
+    interface Testset
+        module procedure:: new_testset
+    end interface
 
     character(len = *), parameter:: FG_COLOR_SUMMARY = "light white"
     character(len = *), parameter:: FG_COLOR_PASS = "light green"
@@ -150,53 +154,77 @@ module fort_test
     !============================================================
     !               testset construction
     !============================================================
-    type(TestSet) function new_testset(test_list, name) result(my_testset)
+    type(Testset) function new_testset(name, cap) result(ts)
         character(len = *), optional:: name
-        character(len = :), allocatable::testset_name
-        type(Result), dimension(:), intent(in):: test_list
-        integer:: i, num_tests
+        integer, optional:: cap
+
 
         if (present(name)) then
-            testset_name = name
+            ts%name = name
         else
-            testset_name = "noname"
+            ts%name = "noname"
         endif
 
-        my_testset%name = testset_name
-        my_testset%test_list = test_list
-        my_testset%num_passed = 0
-        my_testset%num_failed = 0
 
-        num_tests = size(my_testset%test_list)
+        if (present(cap)) then
+            allocate(ts%tests(cap))
+        else
+            allocate(ts%tests(16))
+        endif 
 
-        ! TODO: Move this into testset constructor
-        do i = 1, num_tests
-            if (my_testset%test_list(i)%passed) then
-                my_testset%num_passed = my_testset%num_passed + 1
-            else
-                my_testset%num_failed = my_testset%num_failed + 1
-            endif
-        end do
+        ts%num_failed = 0
+        ts%num_tests = 0
+
     end function
 
-    type(Result) function assert(bool) result(my_result)
+    subroutine append_result(ts, res)
+        type(Testset), intent(inout):: ts
+        type(Result), intent(in):: res
+        type(Result), allocatable:: tmp(:)
+        integer(i32):: cap
+
+        cap = size(ts%tests)
+    
+        if (ts%num_tests .eq. cap) then
+            call move_alloc(ts%tests, tmp)
+            allocate(ts%tests(2*cap))
+            ts%tests(1:cap) = tmp(1:cap)
+        endif
+
+        ts%num_tests = ts%num_tests + 1
+        ts%tests(ts%num_tests) = res
+
+        if (.not. res%passed) ts%num_failed = ts%num_failed + 1
+    end subroutine
+
+    subroutine assert(ts, bool)
+        type(Testset), intent(inout):: ts
         logical, intent(in):: bool
-        my_result%assertion = to_string(bool)
-        my_result%passed = bool
-    end function
+        type(Result)::res
 
-    type(Result) function build_assertion(arg1_str, arg2_str, passed, comparision) result(my_result)
+        res%assertion = to_string(bool)
+        res%passed = bool
+
+        call append_result(ts, res)
+    end subroutine 
+
+    subroutine build_assertion(ts, arg1_str, arg2_str, passed, comparision)
+        type(Testset), intent(inout):: ts
         character(len = *):: arg1_str, arg2_str, comparision
         logical:: passed
-        my_result%assertion = trim(adjustl(arg1_str))//" "//comparision//" "//trim(adjustl(arg2_str))
-        my_result%passed = passed
-    end function build_assertion
+        type(Result):: res
+
+        res%assertion = trim(adjustl(arg1_str))//" "//comparision//" "//trim(adjustl(arg2_str))
+        res%passed = passed
+
+        call append_result(ts, res)
+    end subroutine 
 
     !============================================================
     !               running tests
     !============================================================
     integer(i32) function run_all(testsets) result(num_failed)
-        type(TestSet), dimension(:):: testsets
+        type(Testset), dimension(:):: testsets
         integer(i32):: i, column_widths(4), num_pass, num_fail, num_total
         character(len = 4):: number_string
 
@@ -205,9 +233,9 @@ module fort_test
 
         ! Get testset dimensions for printing
         do i = 1, size(testsets)
-            num_pass  = testsets(i)%num_passed
+            num_total = testsets(i)%num_tests
             num_fail  = testsets(i)%num_failed
-            num_total = num_pass + num_fail
+            num_pass  = num_total - num_fail
 
             ! Give proper name to test set if it doesn't have one
             if (testsets(i)%name == 'noname') then
@@ -246,7 +274,7 @@ module fort_test
     end function
 
     subroutine run_and_exit(testsets)
-        type(TestSet), dimension(:), intent(in):: testsets
+        type(Testset), dimension(:), intent(in):: testsets
         integer(i32):: num_failed
         num_failed = run_all(testsets)
         call exit(logical_to_int(num_failed /= 0))
@@ -420,367 +448,430 @@ module fort_test
     !============================================================
     !               methods for assert_eq
     !============================================================
-    type(Result) function logical_assert_eq(arg1, arg2) result(my_result)
+    subroutine logical_assert_eq(ts, arg1, arg2)
+        type(Testset), intent(inout):: ts
         logical, intent(in):: arg1, arg2
-        my_result = build_assertion(to_string(arg1), to_string(arg2), (arg1 .eqv. arg2), "==")
-    end function
+        call build_assertion(ts, to_string(arg1), to_string(arg2), (arg1 .eqv. arg2), "==")
+    end subroutine
 
-    type(Result) function logical_arr_assert_eq(arg1, arg2) result(my_result)
+    subroutine logical_arr_assert_eq(ts, arg1, arg2)
+        type(Testset), intent(inout):: ts
         logical, intent(in):: arg1(:), arg2(:)
         logical:: assertion_result
         assertion_result = size(arg1) == size(arg2) .and. all(arg1 .eqv. arg2)
-        my_result = build_assertion(to_string(arg1), to_string(arg2), assertion_result, "==")
-    end function
+        call build_assertion(ts, to_string(arg1), to_string(arg2), assertion_result, "==")
+    end subroutine 
 
-    type(Result) function int8_assert_eq(arg1, arg2) result(my_result)
+    subroutine int8_assert_eq(ts, arg1, arg2)
+        type(Testset), intent(inout):: ts
         integer(i8), intent(in):: arg1, arg2
-        my_result = build_assertion(to_string(arg1), to_string(arg2), (arg1 == arg2), "==")
-    end function
+        call build_assertion(ts, to_string(arg1), to_string(arg2), (arg1 == arg2), "==")
+    end subroutine
 
-    type(Result) function int8_arr_assert_eq(arg1, arg2) result(my_result)
+    subroutine int8_arr_assert_eq(ts, arg1, arg2)
+        type(Testset), intent(inout):: ts
         integer(i8), intent(in):: arg1(:), arg2(:)
         logical:: assertion_result
         assertion_result = size(arg1) == size(arg2) .and. all(arg1 == arg2)
-        my_result = build_assertion(to_string(arg1), to_string(arg2), assertion_result, "==")
-    end function
+        call build_assertion(ts, to_string(arg1), to_string(arg2), assertion_result, "==")
+    end subroutine 
 
-    type(Result) function int16_assert_eq(arg1, arg2) result(my_result)
+    subroutine int16_assert_eq(ts, arg1, arg2)
+        type(Testset), intent(inout):: ts
         integer(i16), intent(in):: arg1, arg2
-        my_result = build_assertion(to_string(arg1), to_string(arg2), (arg1 == arg2), "==")
-    end function
+        call build_assertion(ts, to_string(arg1), to_string(arg2), (arg1 == arg2), "==")
+    end subroutine
 
-    type(Result) function int16_arr_assert_eq(arg1, arg2) result(my_result)
+    subroutine int16_arr_assert_eq(ts, arg1, arg2)
+        type(Testset), intent(inout):: ts
         integer(i16), intent(in):: arg1(:), arg2(:)
         logical:: assertion_result
         assertion_result = size(arg1) == size(arg2) .and. all(arg1 == arg2)
-        my_result = build_assertion(to_string(arg1), to_string(arg2), assertion_result, "==")
-    end function
+        call build_assertion(ts, to_string(arg1), to_string(arg2), assertion_result, "==")
+    end subroutine
 
-    type(Result) function int32_assert_eq(arg1, arg2) result(my_result)
+    subroutine int32_assert_eq(ts, arg1, arg2)
+        type(Testset), intent(inout):: ts
         integer(i32), intent(in):: arg1, arg2
-        my_result = build_assertion(to_string(arg1), to_string(arg2), (arg1 == arg2), "==")
-    end function
+        call build_assertion(ts, to_string(arg1), to_string(arg2), (arg1 == arg2), "==")
+    end subroutine
 
-    type(Result) function int32_arr_assert_eq(arg1, arg2) result(my_result)
+    subroutine int32_arr_assert_eq(ts, arg1, arg2)
+        type(Testset), intent(inout):: ts
         integer(i32), intent(in):: arg1(:), arg2(:)
         logical:: assertion_result
         assertion_result = size(arg1) == size(arg2) .and. all(arg1 == arg2)
-        my_result = build_assertion(to_string(arg1), to_string(arg2), assertion_result, "==")
-    end function
+        call build_assertion(ts, to_string(arg1), to_string(arg2), assertion_result, "==")
+    end subroutine
 
-    type(Result) function int64_assert_eq(arg1, arg2) result(my_result)
+    subroutine int64_assert_eq(ts, arg1, arg2)
+        type(Testset), intent(inout):: ts
         integer(i64), intent(in):: arg1, arg2
-        my_result = build_assertion(to_string(arg1), to_string(arg2), (arg1 == arg2), "==")
-    end function
+        call build_assertion(ts, to_string(arg1), to_string(arg2), (arg1 == arg2), "==")
+    end subroutine
 
-    type(Result) function int64_arr_assert_eq(arg1, arg2) result(my_result)
+    subroutine int64_arr_assert_eq(ts, arg1, arg2)
+        type(Testset), intent(inout):: ts
         integer(i64), intent(in):: arg1(:), arg2(:)
         logical:: assertion_result
         assertion_result = size(arg1) == size(arg2) .and. all(arg1 == arg2)
-        my_result = build_assertion(to_string(arg1), to_string(arg2), assertion_result, "==")
-    end function
+        call build_assertion(ts, to_string(arg1), to_string(arg2), assertion_result, "==")
+    end subroutine
 
-    type(Result) function real32_assert_eq(arg1, arg2) result(my_result)
+    subroutine real32_assert_eq(ts, arg1, arg2)
+        type(Testset), intent(inout):: ts
         real(f32), intent(in):: arg1, arg2
-        my_result = build_assertion(to_string(arg1), to_string(arg2), (arg1 == arg2), "==")
-    end function
+        call build_assertion(ts, to_string(arg1), to_string(arg2), (arg1 == arg2), "==")
+    end subroutine
 
-    type(Result) function real32_arr_assert_eq(arg1, arg2) result(my_result)
+    subroutine real32_arr_assert_eq(ts, arg1, arg2)
+        type(Testset), intent(inout):: ts
         real(f32), intent(in):: arg1(:), arg2(:)
         logical:: assertion_result
         assertion_result = size(arg1) == size(arg2) .and. all(arg1 == arg2)
-        my_result = build_assertion(to_string(arg1), to_string(arg2), assertion_result, "==")
-    end function
+        call build_assertion(ts, to_string(arg1), to_string(arg2), assertion_result, "==")
+    end subroutine
 
-    type(Result) function real64_assert_eq(arg1, arg2) result(my_result)
+    subroutine real64_assert_eq(ts, arg1, arg2)
+        type(Testset), intent(inout):: ts
         real(f64), intent(in):: arg1, arg2
-        my_result = build_assertion(to_string(arg1), to_string(arg2), (arg1 == arg2), "==")
-    end function
+        call build_assertion(ts, to_string(arg1), to_string(arg2), (arg1 == arg2), "==")
+    end subroutine
 
-    type(Result) function real64_arr_assert_eq(arg1, arg2) result(my_result)
+    subroutine real64_arr_assert_eq(ts, arg1, arg2)
+        type(Testset), intent(inout):: ts
         real(f64), intent(in):: arg1(:), arg2(:)
         logical:: assertion_result
         assertion_result = size(arg1) == size(arg2) .and. all(arg1 == arg2)
-        my_result = build_assertion(to_string(arg1), to_string(arg2), assertion_result, "==")
-    end function
+        call build_assertion(ts, to_string(arg1), to_string(arg2), assertion_result, "==")
+    end subroutine
 
-    type(Result) function real128_assert_eq(arg1, arg2) result(my_result)
+    subroutine real128_assert_eq(ts, arg1, arg2)
+        type(Testset), intent(inout):: ts
         real(f128), intent(in):: arg1, arg2
-        my_result = build_assertion(to_string(arg1), to_string(arg2), (arg1 == arg2), "==")
-    end function
+        call build_assertion(ts, to_string(arg1), to_string(arg2), (arg1 == arg2), "==")
+    end subroutine
 
-    type(Result) function real128_arr_assert_eq(arg1, arg2) result(my_result)
+    subroutine real128_arr_assert_eq(ts, arg1, arg2)
+        type(Testset), intent(inout):: ts
         real(f128), intent(in):: arg1(:), arg2(:)
         logical:: assertion_result
         assertion_result = size(arg1) == size(arg2) .and. all(arg1 == arg2)
-        my_result = build_assertion(to_string(arg1), to_string(arg2), assertion_result, "==")
-    end function
+        call build_assertion(ts, to_string(arg1), to_string(arg2), assertion_result, "==")
+    end subroutine
 
-    type(Result) function string_assert_eq(arg1, arg2) result(my_result)
+    subroutine string_assert_eq(ts, arg1, arg2)
+        type(Testset), intent(inout):: ts
         character(len = *), intent(in):: arg1, arg2
-        my_result = build_assertion(arg1, arg2, arg1 == arg2, "==")
-    end function
+        call build_assertion(ts, arg1, arg2, arg1 == arg2, "==")
+    end subroutine
 
     !============================================================
     !               methods for assert_neq
     !============================================================
-    type(Result) function logical_assert_neq(arg1, arg2) result(my_result)
+    subroutine logical_assert_neq(ts, arg1, arg2)
+        type(Testset), intent(inout):: ts
         logical, intent(in):: arg1, arg2
-        my_result = build_assertion(to_string(arg1), to_string(arg2), (arg1 .neqv. arg2), "!=")
-    end function
+        call build_assertion(ts, to_string(arg1), to_string(arg2), (arg1 .neqv. arg2), "!=")
+    end subroutine
 
-    type(Result) function logical_arr_assert_neq(arg1, arg2) result(my_result)
+    subroutine logical_arr_assert_neq(ts, arg1, arg2)
+        type(Testset), intent(inout):: ts
         logical, intent(in):: arg1(:), arg2(:)
         logical:: assertion_result
         assertion_result = size(arg1) /= size(arg2) .or. any(arg1 .neqv. arg2)
-        my_result = build_assertion(to_string(arg1), to_string(arg2), assertion_result, "!=")
-    end function
+        call build_assertion(ts, to_string(arg1), to_string(arg2), assertion_result, "!=")
+    end subroutine
 
-    type(Result) function int8_assert_neq(arg1, arg2) result(my_result)
+    subroutine int8_assert_neq(ts, arg1, arg2)
+        type(Testset), intent(inout):: ts
         integer(i8), intent(in):: arg1, arg2
-        my_result = build_assertion(to_string(arg1), to_string(arg2), (arg1 /= arg2), "!=")
-    end function
+        call build_assertion(ts, to_string(arg1), to_string(arg2), (arg1 /= arg2), "!=")
+    end subroutine
 
-    type(Result) function int8_arr_assert_neq(arg1, arg2) result(my_result)
+    subroutine int8_arr_assert_neq(ts, arg1, arg2)
+        type(Testset), intent(inout):: ts
         integer(i8), intent(in):: arg1(:), arg2(:)
         logical:: assertion_result
         assertion_result = size(arg1) /= size(arg2) .or.any(arg1 /= arg2)
-        my_result = build_assertion(to_string(arg1), to_string(arg2), assertion_result, "!=")
-    end function
+        call build_assertion(ts, to_string(arg1), to_string(arg2), assertion_result, "!=")
+    end subroutine
 
-    type(Result) function int16_assert_neq(arg1, arg2) result(my_result)
+    subroutine int16_assert_neq(ts, arg1, arg2)
+        type(Testset), intent(inout):: ts
         integer(i16), intent(in):: arg1, arg2
-        my_result = build_assertion(to_string(arg1), to_string(arg2), (arg1 /= arg2), "!=")
-    end function
+        call build_assertion(ts, to_string(arg1), to_string(arg2), (arg1 /= arg2), "!=")
+    end subroutine
 
-    type(Result) function int16_arr_assert_neq(arg1, arg2) result(my_result)
+    subroutine int16_arr_assert_neq(ts, arg1, arg2)
+        type(Testset), intent(inout):: ts
         integer(i16), intent(in):: arg1(:), arg2(:)
         logical:: assertion_result
         assertion_result = size(arg1) /= size(arg2) .or.any(arg1 /= arg2)
-        my_result = build_assertion(to_string(arg1), to_string(arg2), assertion_result, "!=")
-    end function
+        call build_assertion(ts, to_string(arg1), to_string(arg2), assertion_result, "!=")
+    end subroutine
 
-    type(Result) function int32_assert_neq(arg1, arg2) result(my_result)
+    subroutine int32_assert_neq(ts, arg1, arg2)
+        type(Testset), intent(inout):: ts
         integer(i32), intent(in):: arg1, arg2
-        my_result = build_assertion(to_string(arg1), to_string(arg2), (arg1 /= arg2), "!=")
-    end function
+        call build_assertion(ts, to_string(arg1), to_string(arg2), (arg1 /= arg2), "!=")
+    end subroutine
 
-    type(Result) function int32_arr_assert_neq(arg1, arg2) result(my_result)
+    subroutine int32_arr_assert_neq(ts, arg1, arg2)
+        type(Testset), intent(inout):: ts
         integer(i32), intent(in):: arg1(:), arg2(:)
         logical:: assertion_result
         assertion_result = size(arg1) /= size(arg2) .or.any(arg1 /= arg2)
-        my_result = build_assertion(to_string(arg1), to_string(arg2), assertion_result, "!=")
-    end function
+        call build_assertion(ts, to_string(arg1), to_string(arg2), assertion_result, "!=")
+    end subroutine
 
-    type(Result) function int64_assert_neq(arg1, arg2) result(my_result)
+    subroutine int64_assert_neq(ts, arg1, arg2)
+        type(Testset), intent(inout):: ts
         integer(i64), intent(in):: arg1, arg2
-        my_result = build_assertion(to_string(arg1), to_string(arg2), (arg1 /= arg2), "!=")
-    end function
+        call build_assertion(ts, to_string(arg1), to_string(arg2), (arg1 /= arg2), "!=")
+    end subroutine
 
-    type(Result) function int64_arr_assert_neq(arg1, arg2) result(my_result)
+    subroutine int64_arr_assert_neq(ts, arg1, arg2)
+        type(Testset), intent(inout):: ts
         integer(i64), intent(in):: arg1(:), arg2(:)
         logical:: assertion_result
         assertion_result = size(arg1) /= size(arg2) .or. any(arg1 /= arg2)
-        my_result = build_assertion(to_string(arg1), to_string(arg2), assertion_result, "!=")
-    end function
+        call build_assertion(ts, to_string(arg1), to_string(arg2), assertion_result, "!=")
+    end subroutine
 
-    type(Result) function real32_assert_neq(arg1, arg2) result(my_result)
+    subroutine real32_assert_neq(ts, arg1, arg2)
+        type(Testset), intent(inout):: ts
         real(f32), intent(in):: arg1, arg2
-        my_result = build_assertion(to_string(arg1), to_string(arg2), (arg1 /= arg2), "!=")
-    end function
+        call build_assertion(ts, to_string(arg1), to_string(arg2), (arg1 /= arg2), "!=")
+    end subroutine
 
-    type(Result) function real32_arr_assert_neq(arg1, arg2) result(my_result)
+    subroutine real32_arr_assert_neq(ts, arg1, arg2)
+        type(Testset), intent(inout):: ts
         real(f32), intent(in):: arg1(:), arg2(:)
         logical:: assertion_result
         assertion_result = size(arg1) /= size(arg2) .or. any(arg1 /= arg2)
-        my_result = build_assertion(to_string(arg1), to_string(arg2), assertion_result, "!=")
-    end function
+        call build_assertion(ts, to_string(arg1), to_string(arg2), assertion_result, "!=")
+    end subroutine
 
-    type(Result) function real64_assert_neq(arg1, arg2) result(my_result)
+    subroutine real64_assert_neq(ts, arg1, arg2)
+        type(Testset), intent(inout):: ts
         real(f64), intent(in):: arg1, arg2
-        my_result = build_assertion(to_string(arg1), to_string(arg2), (arg1 /= arg2), "!=")
-    end function
+        call build_assertion(ts, to_string(arg1), to_string(arg2), (arg1 /= arg2), "!=")
+    end subroutine
 
-    type(Result) function real64_arr_assert_neq(arg1, arg2) result(my_result)
+    subroutine real64_arr_assert_neq(ts, arg1, arg2)
+        type(Testset), intent(inout):: ts
         real(f64), intent(in):: arg1(:), arg2(:)
         logical:: assertion_result
         assertion_result = size(arg1) /= size(arg2) .or. any(arg1 /= arg2)
-        my_result = build_assertion(to_string(arg1), to_string(arg2), assertion_result, "!=")
-    end function
+        call build_assertion(ts, to_string(arg1), to_string(arg2), assertion_result, "!=")
+    end subroutine
 
-    type(Result) function real128_assert_neq(arg1, arg2) result(my_result)
+    subroutine real128_assert_neq(ts, arg1, arg2)
+        type(Testset), intent(inout):: ts
         real(f128), intent(in):: arg1, arg2
-        my_result = build_assertion(to_string(arg1), to_string(arg2), (arg1 /= arg2), "!=")
-    end function
+        call build_assertion(ts, to_string(arg1), to_string(arg2), (arg1 /= arg2), "!=")
+    end subroutine
 
-    type(Result) function real128_arr_assert_neq(arg1, arg2) result(my_result)
+    subroutine real128_arr_assert_neq(ts, arg1, arg2)
+        type(Testset), intent(inout):: ts
         real(f128), intent(in):: arg1(:), arg2(:)
         logical:: assertion_result
         assertion_result = size(arg1) /= size(arg2) .or. any(arg1 /= arg2)
-        my_result = build_assertion(to_string(arg1), to_string(arg2), assertion_result, "!=")
-    end function
+        call build_assertion(ts, to_string(arg1), to_string(arg2), assertion_result, "!=")
+    end subroutine
 
-    type(Result) function string_assert_neq(arg1, arg2) result(my_result)
+    subroutine string_assert_neq(ts, arg1, arg2)
+        type(Testset), intent(inout):: ts
         character(len = *), intent(in):: arg1, arg2
-        my_result = build_assertion(arg1, arg2, arg1 /= arg2, "!=")
-    end function
+        call build_assertion(ts, arg1, arg2, arg1 /= arg2, "!=")
+    end subroutine
 
     !============================================================
     !               methods for assert_gt
     !============================================================
-    type(Result) function int8_assert_gt(arg1, arg2) result(my_result)
+    subroutine int8_assert_gt(ts, arg1, arg2)
+        type(Testset), intent(inout):: ts
         integer(i8), intent(in):: arg1, arg2
-        my_result = build_assertion(to_string(arg1), to_string(arg2), (arg1 > arg2), ">")
-    end function
+        call build_assertion(ts, to_string(arg1), to_string(arg2), (arg1 > arg2), ">")
+    end subroutine
 
-    type(Result) function int16_assert_gt(arg1, arg2) result(my_result)
+    subroutine int16_assert_gt(ts, arg1, arg2)
+        type(Testset), intent(inout):: ts
         integer(i16), intent(in):: arg1, arg2
-        my_result = build_assertion(to_string(arg1), to_string(arg2), (arg1 > arg2), ">")
-    end function
+        call build_assertion(ts, to_string(arg1), to_string(arg2), (arg1 > arg2), ">")
+    end subroutine
 
-    type(Result) function int32_assert_gt(arg1, arg2) result(my_result)
+    subroutine int32_assert_gt(ts, arg1, arg2)
+        type(Testset), intent(inout):: ts
         integer(i32), intent(in):: arg1, arg2
-        my_result = build_assertion(to_string(arg1), to_string(arg2), (arg1 > arg2), ">")
-    end function
+        call build_assertion(ts, to_string(arg1), to_string(arg2), (arg1 > arg2), ">")
+    end subroutine
 
-    type(Result) function int64_assert_gt(arg1, arg2) result(my_result)
+    subroutine int64_assert_gt(ts, arg1, arg2)
+        type(Testset), intent(inout):: ts
         integer(i64), intent(in):: arg1, arg2
-        my_result = build_assertion(to_string(arg1), to_string(arg2), (arg1 > arg2), ">")
-    end function
+        call build_assertion(ts, to_string(arg1), to_string(arg2), (arg1 > arg2), ">")
+    end subroutine
 
-    type(Result) function real32_assert_gt(arg1, arg2) result(my_result)
+    subroutine real32_assert_gt(ts, arg1, arg2)
+        type(Testset), intent(inout):: ts
         real, intent(in):: arg1, arg2
-        my_result = build_assertion(to_string(arg1), to_string(arg2), (arg1 > arg2), ">")
-    end function
+        call build_assertion(ts, to_string(arg1), to_string(arg2), (arg1 > arg2), ">")
+    end subroutine
 
-    type(Result) function real64_assert_gt(arg1, arg2) result(my_result)
+    subroutine real64_assert_gt(ts, arg1, arg2)
+        type(Testset), intent(inout):: ts
         real(f64), intent(in):: arg1, arg2
-        my_result = build_assertion(to_string(arg1), to_string(arg2), (arg1 > arg2), ">")
-    end function
+        call build_assertion(ts, to_string(arg1), to_string(arg2), (arg1 > arg2), ">")
+    end subroutine
 
-    type(Result) function real128_assert_gt(arg1, arg2) result(my_result)
+    subroutine real128_assert_gt(ts, arg1, arg2)
+        type(Testset), intent(inout):: ts
         real(f128), intent(in):: arg1, arg2
-        my_result = build_assertion(to_string(arg1), to_string(arg2), (arg1 > arg2), ">")
-    end function
+        call build_assertion(ts, to_string(arg1), to_string(arg2), (arg1 > arg2), ">")
+    end subroutine
 
     !============================================================
     !               methods for assert_geq
     !============================================================
-    type(Result) function int8_assert_geq(arg1, arg2) result(my_result)
+    subroutine int8_assert_geq(ts, arg1, arg2)
+        type(Testset), intent(inout):: ts
         integer(i8), intent(in):: arg1, arg2
-        my_result = build_assertion(to_string(arg1), to_string(arg2), (arg1 >= arg2), ">=")
-    end function
+        call build_assertion(ts, to_string(arg1), to_string(arg2), (arg1 >= arg2), ">=")
+    end subroutine
 
-    type(Result) function int16_assert_geq(arg1, arg2) result(my_result)
+    subroutine int16_assert_geq(ts, arg1, arg2)
+        type(Testset), intent(inout):: ts
         integer(i16), intent(in):: arg1, arg2
-        my_result = build_assertion(to_string(arg1), to_string(arg2), (arg1 >= arg2), ">=")
-    end function
+        call build_assertion(ts, to_string(arg1), to_string(arg2), (arg1 >= arg2), ">=")
+    end subroutine
 
-    type(Result) function int32_assert_geq(arg1, arg2) result(my_result)
+    subroutine int32_assert_geq(ts, arg1, arg2)
+        type(Testset), intent(inout):: ts
         integer(i32), intent(in):: arg1, arg2
-        my_result = build_assertion(to_string(arg1), to_string(arg2), (arg1 >= arg2), ">=")
-    end function
+        call build_assertion(ts, to_string(arg1), to_string(arg2), (arg1 >= arg2), ">=")
+    end subroutine
 
-    type(Result) function int64_assert_geq(arg1, arg2) result(my_result)
+    subroutine int64_assert_geq(ts, arg1, arg2)
+        type(Testset), intent(inout):: ts
         integer(i64), intent(in):: arg1, arg2
-        my_result = build_assertion(to_string(arg1), to_string(arg2), (arg1 >= arg2), ">=")
-    end function
+        call build_assertion(ts, to_string(arg1), to_string(arg2), (arg1 >= arg2), ">=")
+    end subroutine
 
-    type(Result) function real32_assert_geq(arg1, arg2) result(my_result)
+    subroutine real32_assert_geq(ts, arg1, arg2)
+        type(Testset), intent(inout):: ts
         real, intent(in):: arg1, arg2
-        my_result = build_assertion(to_string(arg1), to_string(arg2), (arg1 >= arg2), ">=")
-    end function
+        call build_assertion(ts, to_string(arg1), to_string(arg2), (arg1 >= arg2), ">=")
+    end subroutine
 
-    type(Result) function real64_assert_geq(arg1, arg2) result(my_result)
+    subroutine real64_assert_geq(ts, arg1, arg2)
+        type(Testset), intent(inout):: ts
         real(f64), intent(in):: arg1, arg2
-        my_result = build_assertion(to_string(arg1), to_string(arg2), (arg1 >= arg2), ">=")
-    end function
+        call build_assertion(ts, to_string(arg1), to_string(arg2), (arg1 >= arg2), ">=")
+    end subroutine
 
-    type(Result) function real128_assert_geq(arg1, arg2) result(my_result)
+    subroutine real128_assert_geq(ts, arg1, arg2)
+        type(Testset), intent(inout):: ts
         real(f128), intent(in):: arg1, arg2
-        my_result = build_assertion(to_string(arg1), to_string(arg2), (arg1 >= arg2), ">=")
-    end function
+        call build_assertion(ts, to_string(arg1), to_string(arg2), (arg1 >= arg2), ">=")
+    end subroutine
 
     !============================================================
     !               methods for assert_lt
     !============================================================
-    type(Result) function int8_assert_lt(arg1, arg2) result(my_result)
+    subroutine int8_assert_lt(ts, arg1, arg2)
+        type(Testset), intent(inout):: ts
         integer(i8), intent(in):: arg1, arg2
-        my_result = build_assertion(to_string(arg1), to_string(arg2), (arg1 < arg2), "<")
-    end function
+        call build_assertion(ts, to_string(arg1), to_string(arg2), (arg1 < arg2), "<")
+    end subroutine
 
-    type(Result) function int16_assert_lt(arg1, arg2) result(my_result)
+    subroutine int16_assert_lt(ts, arg1, arg2)
+        type(Testset), intent(inout):: ts
         integer(i16), intent(in):: arg1, arg2
-        my_result = build_assertion(to_string(arg1), to_string(arg2), (arg1 < arg2), "<")
-    end function
+        call build_assertion(ts, to_string(arg1), to_string(arg2), (arg1 < arg2), "<")
+    end subroutine
 
-    type(Result) function int32_assert_lt(arg1, arg2) result(my_result)
+    subroutine int32_assert_lt(ts, arg1, arg2)
+        type(Testset), intent(inout):: ts
         integer(i32), intent(in):: arg1, arg2
-        my_result = build_assertion(to_string(arg1), to_string(arg2), (arg1 < arg2), "<")
-    end function
+        call build_assertion(ts, to_string(arg1), to_string(arg2), (arg1 < arg2), "<")
+    end subroutine
 
-    type(Result) function int64_assert_lt(arg1, arg2) result(my_result)
+    subroutine int64_assert_lt(ts, arg1, arg2)
+        type(Testset), intent(inout):: ts
         integer(i64), intent(in):: arg1, arg2
-        my_result = build_assertion(to_string(arg1), to_string(arg2), (arg1 < arg2), "<")
-    end function
+        call build_assertion(ts, to_string(arg1), to_string(arg2), (arg1 < arg2), "<")
+    end subroutine
 
-    type(Result) function real32_assert_lt(arg1, arg2) result(my_result)
+    subroutine real32_assert_lt(ts, arg1, arg2)
+        type(Testset), intent(inout):: ts
         real, intent(in):: arg1, arg2
-        my_result = build_assertion(to_string(arg1), to_string(arg2), (arg1 < arg2), "<")
-    end function
+        call build_assertion(ts, to_string(arg1), to_string(arg2), (arg1 < arg2), "<")
+    end subroutine
 
-    type(Result) function real64_assert_lt(arg1, arg2) result(my_result)
+    subroutine real64_assert_lt(ts, arg1, arg2)
+        type(Testset), intent(inout):: ts
         real(f64), intent(in):: arg1, arg2
-        my_result = build_assertion(to_string(arg1), to_string(arg2), (arg1 < arg2), "<")
-    end function
+        call build_assertion(ts, to_string(arg1), to_string(arg2), (arg1 < arg2), "<")
+    end subroutine
 
-    type(Result) function real128_assert_lt(arg1, arg2) result(my_result)
+    subroutine real128_assert_lt(ts, arg1, arg2)
+        type(Testset), intent(inout):: ts
         real(f128), intent(in):: arg1, arg2
-        my_result = build_assertion(to_string(arg1), to_string(arg2), (arg1 < arg2), "<")
-    end function
+        call build_assertion(ts, to_string(arg1), to_string(arg2), (arg1 < arg2), "<")
+    end subroutine
 
     !============================================================
     !               methods for assert_leq
     !============================================================
-    type(Result) function int8_assert_leq(arg1, arg2) result(my_result)
+    subroutine int8_assert_leq(ts, arg1, arg2)
+        type(Testset), intent(inout):: ts
         integer(i8), intent(in):: arg1, arg2
-        my_result = build_assertion(to_string(arg1), to_string(arg2), (arg1 <= arg2), "<=")
-    end function
+        call build_assertion(ts, to_string(arg1), to_string(arg2), (arg1 <= arg2), "<=")
+    end subroutine
 
-    type(Result) function int16_assert_leq(arg1, arg2) result(my_result)
+    subroutine int16_assert_leq(ts, arg1, arg2)
+        type(Testset), intent(inout):: ts
         integer(i16), intent(in):: arg1, arg2
-        my_result = build_assertion(to_string(arg1), to_string(arg2), (arg1 <= arg2), "<=")
-    end function
+        call build_assertion(ts, to_string(arg1), to_string(arg2), (arg1 <= arg2), "<=")
+    end subroutine
 
-    type(Result) function int32_assert_leq(arg1, arg2) result(my_result)
+    subroutine int32_assert_leq(ts, arg1, arg2)
+        type(Testset), intent(inout):: ts
         integer(i32), intent(in):: arg1, arg2
-        my_result = build_assertion(to_string(arg1), to_string(arg2), (arg1 <= arg2), "<=")
-    end function
+        call build_assertion(ts, to_string(arg1), to_string(arg2), (arg1 <= arg2), "<=")
+    end subroutine
 
-    type(Result) function int64_assert_leq(arg1, arg2) result(my_result)
+    subroutine int64_assert_leq(ts, arg1, arg2)
+        type(Testset), intent(inout):: ts
         integer(i64), intent(in):: arg1, arg2
-        my_result = build_assertion(to_string(arg1), to_string(arg2), (arg1 <= arg2), "<=")
-    end function
+        call build_assertion(ts, to_string(arg1), to_string(arg2), (arg1 <= arg2), "<=")
+    end subroutine
 
-    type(Result) function real32_assert_leq(arg1, arg2) result(my_result)
+    subroutine real32_assert_leq(ts, arg1, arg2)
+        type(Testset), intent(inout):: ts
         real(f32), intent(in):: arg1, arg2
-        my_result = build_assertion(to_string(arg1), to_string(arg2), (arg1 <= arg2), "<=")
-    end function
+        call build_assertion(ts, to_string(arg1), to_string(arg2), (arg1 <= arg2), "<=")
+    end subroutine
 
-    type(Result) function real64_assert_leq(arg1, arg2) result(my_result)
+    subroutine real64_assert_leq(ts, arg1, arg2)
+        type(Testset), intent(inout):: ts
         real(f64), intent(in):: arg1, arg2
-        my_result = build_assertion(to_string(arg1), to_string(arg2), (arg1 <= arg2), "<=")
-    end function
+        call build_assertion(ts, to_string(arg1), to_string(arg2), (arg1 <= arg2), "<=")
+    end subroutine
 
-    type(Result) function real128_assert_leq(arg1, arg2) result(my_result)
+    subroutine real128_assert_leq(ts, arg1, arg2)
+        type(Testset), intent(inout):: ts
         real(f128), intent(in):: arg1, arg2
-        my_result = build_assertion(to_string(arg1), to_string(arg2), (arg1 <= arg2), "<=")
-    end function
+        call build_assertion(ts, to_string(arg1), to_string(arg2), (arg1 <= arg2), "<=")
+    end subroutine
 
     !============================================================
     !               methods for assert_approx
     !============================================================
-    type(Result) function real32_assert_approx(arg1, arg2, rtol, atol) result(my_result)
+    subroutine real32_assert_approx(ts, arg1, arg2, rtol, atol)
+        type(Testset), intent(inout):: ts
         real(f32), intent(in):: arg1, arg2
         real(f32), optional:: rtol, atol
         real(f32):: relative_tolerance, absolute_tolerance
@@ -793,10 +884,11 @@ module fort_test
         if (present(atol)) absolute_tolerance = atol
 
         passed = (abs(arg1 - arg2) <= (absolute_tolerance + relative_tolerance*max(abs(arg1), abs(arg2))))
-        my_result = build_assertion(to_string(arg1), to_string(arg2), passed, "~=")
-    end function
+        call build_assertion(ts, to_string(arg1), to_string(arg2), passed, "~=")
+    end subroutine
 
-    type(Result) function real64_assert_approx(arg1, arg2, rtol, atol) result(my_result)
+    subroutine real64_assert_approx(ts, arg1, arg2, rtol, atol)
+        type(Testset), intent(inout):: ts
         real(f64), intent(in):: arg1, arg2
         real(f64), optional:: rtol, atol
         real(f64):: relative_tolerance, absolute_tolerance
@@ -809,10 +901,11 @@ module fort_test
         if (present(atol)) absolute_tolerance = atol
 
         passed = (abs(arg1 - arg2) <= (absolute_tolerance + relative_tolerance * max(abs(arg1), abs(arg2))))
-        my_result = build_assertion(to_string(arg1), to_string(arg2), passed, "~=")
-    end function
+        call build_assertion(ts, to_string(arg1), to_string(arg2), passed, "~=")
+    end subroutine
 
-    type(Result) function real128_assert_approx(arg1, arg2, rtol, atol) result(my_result)
+    subroutine real128_assert_approx(ts, arg1, arg2, rtol, atol)
+        type(Testset), intent(inout):: ts
         real(f128), intent(in):: arg1, arg2
         real(f128), optional:: rtol, atol
         real(f128):: relative_tolerance, absolute_tolerance
@@ -825,8 +918,8 @@ module fort_test
         if (present(atol)) absolute_tolerance = atol
 
         passed = (abs(arg1 - arg2) <= (absolute_tolerance + relative_tolerance * max(abs(arg1), abs(arg2))))
-        my_result = build_assertion(to_string(arg1), to_string(arg2), passed, "~=")
-    end function
+        call build_assertion(ts, to_string(arg1), to_string(arg2), passed, "~=")
+    end subroutine
 
     !============================================================
     !       functions for printing and styling test results
@@ -896,20 +989,19 @@ module fort_test
 
     end subroutine print_header
 
-    subroutine print_testset_results(my_testset, column_widths)
-        type(TestSet), intent(in) :: my_testset
+    subroutine print_testset_results(ts, column_widths)
+        type(Testset), intent(in) :: ts
         integer(i32):: column_widths(4)
 
         character(len = column_widths(1)):: name_str
         character(len = column_widths(2)):: num_passed_str
         character(len = column_widths(3)):: num_failed_str
         character(len = column_widths(4)):: num_total_str
-        integer(i32):: i, num_tests = 0
-        integer(i32):: num_pass, num_fail, num_total
+        integer(i32):: i, num_pass, num_fail, num_tests
 
-        num_pass = my_testset%num_passed
-        num_fail = my_testset%num_failed
-        num_total = num_pass + num_fail
+        num_tests = ts%num_tests
+        num_fail = ts%num_failed
+        num_pass = num_tests - num_fail
 
         write(num_passed_str, '(I0)') num_pass
 
@@ -919,19 +1011,17 @@ module fort_test
             write(num_failed_str, '(A)')
         endif
 
-        write(num_total_str, '(I0)') num_total
+        write(num_total_str, '(I0)') num_tests
 
-        write(name_str, '(A)') my_testset%name
+        write(name_str, '(A)') ts%name
 
         write(stdout, '(A)') name_str // '|' // &
                 style_text(adjustr(num_passed_str), fg_color = FG_COLOR_PASS)//&
                 style_text(adjustr(num_failed_str), fg_color = FG_COLOR_FAIL)//&
                 style_text(adjustr(num_total_str), fg_color = FG_COLOR_TOTAL)
 
-        num_tests = size(my_testset%test_list)
-
         do i = 1, num_tests
-            call print_result_msg(my_testset%test_list(i), i)
+            call print_result_msg(ts%tests(i), i)
         end do
 
     end subroutine print_testset_results

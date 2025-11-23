@@ -9,7 +9,7 @@ program test
     character(len = 32):: filename
     character:: nl
     integer(i32):: num_failed = 0, exit_code = 0
-    type(TestSet):: ts_basics, ts_options, ts_arrays
+    type(Testset):: ts_basics, ts_options, ts_arrays
     logical:: verbose = .false.
 
     nl = new_line('a')
@@ -28,37 +28,32 @@ program test
         integer(i32):: int_arr_ml_exp(3) = (/ 1, 2, 3 /)
         real(f64):: float_arr_exp(3) = (/-1.d0, 3.14159d0, 9.1d-31/)
 
+        ts_basics = Testset("Basics")
+
         basics = input%get("basics")
         call read_value(basics%get("int_var"), int_var)
         if (verbose) print "(A,g0)", "int_var: ", int_var
+        call assert_eq(ts_basics, int_var, 2)
 
         call read_value(basics%get("float_var"), float_var)
         if (verbose) print "(A,g0)", "float_var: ", float_var
+        call assert_eq(ts_basics, float_var, 10.0_f64)
 
         call read_value(basics%get("string_var"), string_var)
         if (verbose) print "(A,g0)", "string_var: ", string_var
+        call assert_eq(ts_basics, string_var, "string")
 
         call read_value(basics%get("int_arr"), int_arr)
         if (verbose) print "(A,*(g0,:,','),A)", "int_arr: [", int_arr, "]"
+        call assert_eq(ts_basics, int_arr, int_arr_exp)
 
         call read_value(basics%get("float_arr"), float_arr)
         if (verbose) print "(A,*(g0,:,','),A)", "float_arr: [", float_arr, "]"
+        call assert_eq(ts_basics, float_arr, float_arr_exp)
 
         call read_value(basics%get("int_arr_multiline"), int_arr_multiline)
         if (verbose) print "(A,*(g0,:,','),A)", "int_arr_multiline: [", int_arr_multiline, "]"
-
-        ts_basics = new_testset( &
-            (/ &
-                assert_eq(int_var, 2), &
-                assert_eq(float_var, 10.0d0), &
-                assert_eq(string_var, "string"), &
-                assert(all(int_arr .eq. int_arr_exp)), &
-                assert(all(float_arr .eq. float_arr_exp)), &
-                assert(all(int_arr_multiline .eq. int_arr_ml_exp)), &
-                assert(.true.) &
-            /), &
-            name = "Variables" & 
-        )
+        call assert_eq(ts_basics, int_arr_multiline, int_arr_ml_exp)
     end block
 
     block
@@ -72,51 +67,37 @@ program test
         logical:: bool_option
         type(Result), allocatable:: tests(:)
 
-        allocate(tests(1024))
-        test_ind = 1
-
+        ts_options = Testset("Options")
+    
         options = input%get("options")
 
         call read_value(options%get("string_option", error = .false.), string_option)
-        tests(test_ind) = assert_eq(string_option, "a string")
-        test_ind = test_ind + 1
+        call assert_eq(ts_options, string_option, "a string")
 
         call read_value(options%get("float_option", error = .false.), float_option)
-        tests(test_ind) = assert(isnan(float_option))
-        test_ind = test_ind + 1
+        call assert(ts_options, isnan(float_option))
 
         call read_value(options%get("bool_option", error = .false.), bool_option)
-        tests(test_ind) = assert_eq(bool_option, .false.)
-        test_ind = test_ind + 1
+        call assert_eq(ts_options, bool_option, .false.)
 
         call read_value(options%get("integer_option", error = .false.), integer_option)
-        tests(test_ind) = assert_eq(integer_option, 2)
-        test_ind = test_ind + 1
+        call assert_eq(ts_options, integer_option, 2)
 
         call read_value(options%get("array_option", error = .false.), array_option)
-        num_array_elements = size(array_option)
-        tests(test_ind) = assert_eq(num_array_elements, 2)
-        tests(test_ind+1) = assert_eq(array_option(1), 1.0_f64)
-        tests(test_ind+2) = assert_eq(array_option(2), -0.1e20_f64)
-        test_ind = test_ind + 3
+        call assert_eq(ts_options, array_option, (/1.0_f64, -0.1e20_f64/))
 
         call read_value(&
             options%get("not_present_option", error = .false.), &
             not_present_option, &
             default = (/1.0_f64, 2.0_f64, 3.0_f64/)&
         )
-        tests(test_ind) = assert_eq(size(not_present_option), 3)
-        tests(test_ind+1) = assert_eq(not_present_option(1), 1.0_f64)
-        tests(test_ind+2) = assert_eq(not_present_option(2), 2.0_f64)
-        tests(test_ind+3) = assert_eq(not_present_option(3), 3.0_f64)
-        test_ind = test_ind + 4
+        call assert_eq(ts_options, not_present_option, (/1.0_f64, 2.0_f64, 3.0_f64/))
 
         more_options = input%get("more-options")
         call read_value(more_options%get("another_option"), another_option)
-        tests(test_ind) = assert_eq(another_option, 2)
-        tests(test_ind+1) = assert(input%has_key("fruits"))
-        test_ind = test_ind + 2
+        call assert_eq(ts_options, another_option, 2)
 
+        call assert(ts_options, input%has_key("fruits")) 
         fruits = input%get("fruits")
 
         fruit_name_exp = (/"apple ", "orange", "banana", "pomelo"/)
@@ -124,26 +105,25 @@ program test
         fruit_in_stock_exp = (/1, 3, 5, -1/)
         fruit_color_exp = (/"red   ", "orange", "yellow", "yellow"/)
 
-        tests(test_ind) = assert_eq(num_children(fruits), 4)
-        test_ind = test_ind + 1
+        call assert_eq(ts_options, num_children(fruits), 4)
 
         do i = 1, num_children(fruits)
             fruit = get(input%get("fruits"), i)
 
-            tests(test_ind) = assert(fruit%has_key("properties"))
-            test_ind = test_ind + 1
-
+            call assert(ts_options, fruit%has_key("properties"))
             properties = fruit%get("properties")
-            call read_value(fruit%get("type"), fruit_name)
-            call read_value(properties%get("in_stock"), in_stock)
-            call read_value(properties%get("color"), fruit_color)
-            call read_value(properties%get("mass_g"), mass_g)
 
-            tests(test_ind) = assert_eq(fruit_name, strip(fruit_name_exp(i)))
-            tests(test_ind+1) = assert_eq(in_stock, fruit_in_stock_exp(i))
-            tests(test_ind+2) = assert_eq(fruit_color, strip(fruit_color_exp(i)))
-            tests(test_ind+3) = assert_eq(mass_g, fruit_mass_exp(i))
-            test_ind = test_ind + 4
+            call read_value(fruit%get("type"), fruit_name)
+            call assert_eq(ts_options, fruit_name, strip(fruit_name_exp(i)))
+
+            call read_value(properties%get("in_stock"), in_stock)
+            call assert_eq(ts_options, in_stock, fruit_in_stock_exp(i))
+
+            call read_value(properties%get("color"), fruit_color)
+            call assert_eq(ts_options, fruit_color, strip(fruit_color_exp(i)))
+
+            call read_value(properties%get("mass_g"), mass_g)
+            call assert_eq(ts_options, mass_g, fruit_mass_exp(i))
 
             if (verbose) print*, ""
             if (verbose) print*, "Fruit: ", i
@@ -153,57 +133,40 @@ program test
             if (verbose) print*, "In stock: ", in_stock
         end do
 
-        ts_options = new_testset(tests(1:test_ind-1), "Options")
-
     end block
 
     block
         type(toml_object):: arrays, arr3
         integer(i32), allocatable:: arr1(:), long_arr(:)
-        integer(i32):: arr1_exp(3)
         integer(i32):: test_ind = 1
-        type(Result), allocatable:: tests(:)
+        integer(i32):: j, long_arr_exp(256) = (/ (j, j=1, 256) /)
+        integer(i32):: arr1_exp(3)
 
-        allocate(tests(1024))
+        ts_arrays = Testset("Arrays")
 
-        tests(test_ind) = assert(has_key(input, "complex-arrays"))
-        test_ind = test_ind + 1
+        call assert(ts_arrays, has_key(input, "complex-arrays"))
+
         arrays = input%get("complex-arrays")
 
         arr1_exp = (/1,2,3/)
-    
-        tests(test_ind) = assert(has_key(arrays, "arr1"))
-        test_ind = test_ind + 1
+
+        call assert(ts_arrays, arrays%has_key("arr1"))
         call read_value(arrays%get("arr1"), arr1)
-        do i = 1, 3
-            tests(test_ind) = assert_eq(arr1(i), arr1_exp(i))
-            test_ind = test_ind+1
-        end do
+        call assert_eq(ts_arrays, arr1, arr1_exp)
 
-        tests(test_ind) = assert(has_key(arrays, "arr2"))
-        test_ind = test_ind + 1
-        tests(test_ind) = assert_eq(num_children(arrays%get("arr2")), 0)
-        test_ind = test_ind + 1
+        call assert(ts_arrays, arrays%has_key("arr2"))
+        call assert_eq(ts_arrays, num_children(arrays%get("arr2")), 0)
 
-        tests(test_ind) = assert(has_key(arrays, "arr3"))
-        test_ind = test_ind + 1
+        call assert(ts_arrays, arrays%has_key("arr3"))
         arr3 = arrays%get("arr3")
-        tests(test_ind) = assert_eq(num_children(arr3), 3)
+        call assert_eq(ts_arrays, num_children(arr3), 3)
         ! TODO: string arrays don't work
-        tests(test_ind) = assert_eq(arr3%value, '["ball", "red", "element",]')
-        test_ind = test_ind + 1
+        call assert_eq(ts_arrays, arr3%value, '["ball", "red", "element",]')
 
-        tests(test_ind) = assert(has_key(arrays, "long_arr"))
-        test_ind = test_ind + 1
+        call assert(ts_arrays, arrays%has_key("long_arr"))
         call read_value(arrays%get("long_arr"), long_arr)
-        do i = 1, size(long_arr)
-            tests(test_ind) = assert_eq(long_arr(i), i)            
-            test_ind = test_ind + 1
-        end do
-
-        ts_arrays = new_testset(tests(1:test_ind-1), "Arrays")
+        call assert_eq(ts_arrays, long_arr, long_arr_exp)
     end block
-
 
     call run_and_exit((/ts_basics, ts_options, ts_arrays/))
 
