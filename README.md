@@ -8,11 +8,10 @@ Consists of a single c. 1000 line file.
 
 Does not currently support all TOML features. Missing features include:
  - Nested arrays
- - Arrays that span mutliple lines
  - Arrays of inline tables
+ - Arrays of strings
  - Nested tables (i.e. [tab1.tab2])
  - Dates and times
- - Binary, Hexadecimal, and octal literals
 
 ## Installation
 
