@@ -8,353 +8,365 @@ program test
     type(Testset), allocatable:: testsets(:)
     logical:: verbose = .false.
 
-    input = parse_file("test/tests.toml")
     allocate(testsets(0))
 
     ! Tokenizer
     block
         type(Testset):: ts
         character(len=:), allocatable:: content
-        type(toml_token):: token
-        integer(i32):: ind = 1
+        type(toml_tokenizer):: tokenizer
 
         call ts%init("Tokenizer")
 
-        content = ""
-        call read_token(content, ind, token)
-        call assert_eq(ts, token%kind, TOML_EOF)
+        call tokenizer%init("")
+        call read_token(tokenizer)
+        call assert_eq(ts, tokenizer%tok_kind, "eof")
 
         content = &
-            "[]= , " // c_newline // '   { s1 = "string 1", s2 = "string 2"} # a comment' // c_newline // &
-            "# another comment # with a hash"   // c_newline // c_tab // &
-            "bool_true = true"                  // c_newline // &
-            "bool_false = false"                // c_newline // &
-            "[[table.array]]"                   // c_newline // &
-            "dec_int = 10_000"                  // c_newline // &
-            "hex_int = 0xdeadbeef"              // c_newline // &
-            "bin_int = 0b01"                    // c_newline // &
-            "oct_int = 0o755"                   // c_newline // &
-            "f1 = 3.14159e0"                    // c_newline // &
-            "f2 = inf"                          // c_newline // &
-            "f3 = nan"                          // c_newline // &
-            "i1 = +0x2f"                        // c_newline // &
-            "f4 = -12.8"                        // c_newline // &
-            "f5 = +nan"                         // c_newline // &
-            "f6 = -inf"                         // c_newline // &
-            ".7"                                // c_newline // &
-            "7."                                // c_newline // &
-            "1dzuew"                            // c_newline // &
-            "3.e+20"                            // c_newline // &
-            "+2e.+0"                            // c_newline // &
+            "[]= , " // C_NEWLINE // '   { s1 = "string 1", s2 = "string 2"} # a comment' // C_NEWLINE // &
+            "# another comment # with a hash"   // C_NEWLINE // c_tab // &
+            "bool_true = true"                  // C_NEWLINE // &
+            "bool_false = false"                // C_NEWLINE // &
+            "[[table.array]]"                   // C_NEWLINE // &
+            "dec_int = 10_000"                  // C_NEWLINE // &
+            "hex_int = 0xdeadbeef"              // C_NEWLINE // &
+            "bin_int = 0b01"                    // C_NEWLINE // &
+            "oct_int = 0o755"                   // C_NEWLINE // &
+            "f1 = 3.14159e-20"                  // C_NEWLINE // &
+            "f2 = inf"                          // C_NEWLINE // &
+            "f3 = nan"                          // C_NEWLINE // &
+            "i1 = +0x2f"                        // C_NEWLINE // &
+            "f4 = -12.8"                        // C_NEWLINE // &
+            "f5 = +nan"                         // C_NEWLINE // &
+            "f6 = -inf"                         // C_NEWLINE // &
+            ".7"                                // C_NEWLINE // &
+            "7."                                // C_NEWLINE // &
+            "1dzuew"                            // C_NEWLINE // &
+            "3.e+20"                            // C_NEWLINE // &
+            "+2e.+0"                            // C_NEWLINE // &
             "//"
 
-        call read_token(content, ind, token)
-        call assert_eq(ts, token%kind, TOML_LBRACKET)
+        call tokenizer%init(content)
 
-        call read_token(content, ind, token)
-        call assert_eq(ts, token%kind, TOML_RBRACKET)
+        call read_token(tokenizer)
+        call assert_eq(ts, tokenizer%tok_kind, "[")
 
-        call read_token(content, ind, token)
-        call assert_eq(ts, token%kind, TOML_EQ)
+        call read_token(tokenizer)
+        call assert_eq(ts, tokenizer%tok_kind, "]")
 
-        call read_token(content, ind, token)
-        call assert_eq(ts, token%kind, TOML_COMMA)
+        call read_token(tokenizer)
+        call assert_eq(ts, tokenizer%tok_kind, "=")
 
-        call read_token(content, ind, token)
-        call assert_eq(ts, token%kind, TOML_NEWLINE)
+        call read_token(tokenizer)
+        call assert_eq(ts, tokenizer%tok_kind, ",")
 
-        call read_token(content, ind, token)
-        call assert_eq(ts, token%kind, TOML_LBRACE)
+        call read_token(tokenizer)
+        call assert_eq(ts, tokenizer%tok_kind, "newline")
 
-        call read_token(content, ind, token)
-        call assert_eq(ts, token%kind, TOML_IDENT)
-        call assert_eq(ts, token%content, "s1")
+        call read_token(tokenizer)
+        call assert_eq(ts, tokenizer%tok_kind, "{")
 
-        call read_token(content, ind, token)
-        call assert_eq(ts, token%kind, TOML_EQ)
+        call read_token(tokenizer)
+        call assert_eq(ts, tokenizer%tok_kind, "ident")
+        call assert_eq(ts, tokenizer%content, "s1")
 
-        call read_token(content, ind, token)
-        call assert_eq(ts, token%kind, TOML_STRING)
-        call assert_eq(ts, token%content, "string 1")
+        call read_token(tokenizer)
+        call assert_eq(ts, tokenizer%tok_kind, "=")
 
-        call read_token(content, ind, token)
-        call assert_eq(ts, token%kind, TOML_COMMA)
+        call read_token(tokenizer)
+        call assert_eq(ts, tokenizer%tok_kind, "string")
+        call assert_eq(ts, tokenizer%content, "string 1")
 
-        call read_token(content, ind, token)
-        call assert_eq(ts, token%kind, TOML_IDENT)
-        call assert_eq(ts, token%content, "s2")
+        call read_token(tokenizer)
+        call assert_eq(ts, tokenizer%tok_kind, ",")
 
-        call read_token(content, ind, token)
-        call assert_eq(ts, token%kind, TOML_EQ)
+        call read_token(tokenizer)
+        call assert_eq(ts, tokenizer%tok_kind, "ident")
+        call assert_eq(ts, tokenizer%content, "s2")
 
-        call read_token(content, ind, token)
-        call assert_eq(ts, token%kind, TOML_STRING)
-        call assert_eq(ts, token%content, "string 2")
+        call read_token(tokenizer)
+        call assert_eq(ts, tokenizer%tok_kind, "=")
 
-        call read_token(content, ind, token)
-        call assert_eq(ts, token%kind, TOML_RBRACE)
-    
-        call read_token(content, ind, token)
-        call assert_eq(ts, token%kind, TOML_COMMENT)
-        call assert_eq(ts, token%content, " a comment")
+        call read_token(tokenizer)
+        call assert_eq(ts, tokenizer%tok_kind, "string")
+        call assert_eq(ts, tokenizer%content, "string 2")
 
-        call read_token(content, ind, token)
-        call assert_eq(ts, token%kind, TOML_NEWLINE)
+        call read_token(tokenizer)
+        call assert_eq(ts, tokenizer%tok_kind, "}")
 
-        call read_token(content, ind, token)
-        call assert_eq(ts, token%kind, TOML_COMMENT)
-        call assert_eq(ts, token%content, " another comment # with a hash")
+        call read_token(tokenizer)
+        call assert_eq(ts, tokenizer%tok_kind, "comment")
+        call assert_eq(ts, tokenizer%content, " a comment")
 
-        call read_token(content, ind, token)
-        call assert_eq(ts, token%kind, TOML_NEWLINE)
+        call read_token(tokenizer)
+        call assert_eq(ts, tokenizer%tok_kind, "newline")
 
-        call read_token(content, ind, token)
-        call assert_eq(ts, token%kind, TOML_IDENT)
-        call assert_eq(ts, token%content, "bool_true")
+        call read_token(tokenizer)
+        call assert_eq(ts, tokenizer%tok_kind, "comment")
+        call assert_eq(ts, tokenizer%content, " another comment # with a hash")
 
-        call read_token(content, ind, token)
-        call assert_eq(ts, token%kind, TOML_EQ)
+        call read_token(tokenizer)
+        call assert_eq(ts, tokenizer%tok_kind, "newline")
 
-        call read_token(content, ind, token)
-        call assert_eq(ts, token%kind, TOML_TRUE)
+        call read_token(tokenizer)
+        call assert_eq(ts, tokenizer%tok_kind, "ident")
+        call assert_eq(ts, tokenizer%content, "bool_true")
 
-        call read_token(content, ind, token)
-        call assert_eq(ts, token%kind, TOML_NEWLINE)
+        call read_token(tokenizer)
+        call assert_eq(ts, tokenizer%tok_kind, "=")
 
-        call read_token(content, ind, token)
-        call assert_eq(ts, token%kind, TOML_IDENT)
-        call assert_eq(ts, token%content, "bool_false")
+        call read_token(tokenizer)
+        call assert_eq(ts, tokenizer%tok_kind, "true")
 
-        call read_token(content, ind, token)
-        call assert_eq(ts, token%kind, TOML_EQ)
+        call read_token(tokenizer)
+        call assert_eq(ts, tokenizer%tok_kind, "newline")
 
-        call read_token(content, ind, token)
-        call assert_eq(ts, token%kind, TOML_FALSE)
+        call read_token(tokenizer)
+        call assert_eq(ts, tokenizer%tok_kind, "ident")
+        call assert_eq(ts, tokenizer%content, "bool_false")
 
-        call read_token(content, ind, token)
-        call assert_eq(ts, token%kind, TOML_NEWLINE)
+        call read_token(tokenizer)
+        call assert_eq(ts, tokenizer%tok_kind, "=")
 
-        call read_token(content, ind, token)
-        call assert_eq(ts, token%kind, TOML_LLBRACKET)
+        call read_token(tokenizer)
+        call assert_eq(ts, tokenizer%tok_kind, "false")
 
-        call read_token(content, ind, token)
-        call assert_eq(ts, token%kind, TOML_IDENT)
-        call assert_eq(ts, token%content, "table")
+        call read_token(tokenizer)
+        call assert_eq(ts, tokenizer%tok_kind, "newline")
 
-        call read_token(content, ind, token)
-        call assert_eq(ts, token%kind, TOML_PERIOD)
+        call read_token(tokenizer)
+        call assert_eq(ts, tokenizer%tok_kind, "[[")
 
-        call read_token(content, ind, token)
-        call assert_eq(ts, token%kind, TOML_IDENT)
-        call assert_eq(ts, token%content, "array")
+        call read_token(tokenizer)
+        call assert_eq(ts, tokenizer%tok_kind, "ident")
+        call assert_eq(ts, tokenizer%content, "table")
 
-        call read_token(content, ind, token)
-        call assert_eq(ts, token%kind, TOML_RRBRACKET)
+        call read_token(tokenizer)
+        call assert_eq(ts, tokenizer%tok_kind, ".")
 
-        call read_token(content, ind, token)
-        call assert_eq(ts, token%kind, TOML_NEWLINE)
+        call read_token(tokenizer)
+        call assert_eq(ts, tokenizer%tok_kind, "ident")
+        call assert_eq(ts, tokenizer%content, "array")
 
-        call read_token(content, ind, token)
-        call assert_eq(ts, token%kind, TOML_IDENT)
-        call assert_eq(ts, token%content, "dec_int")
+        call read_token(tokenizer)
+        call assert_eq(ts, tokenizer%tok_kind, "]]")
 
-        call read_token(content, ind, token)
-        call assert_eq(ts, token%kind, TOML_EQ)
+        call read_token(tokenizer)
+        call assert_eq(ts, tokenizer%tok_kind, "newline")
 
-        call read_token(content, ind, token)
-        call assert_eq(ts, token%kind, TOML_INT_DEC)
-        call assert_eq(ts, token%content, "10000")
+        call read_token(tokenizer)
+        call assert_eq(ts, tokenizer%tok_kind, "ident")
+        call assert_eq(ts, tokenizer%content, "dec_int")
 
-        call read_token(content, ind, token)
-        call assert_eq(ts, token%kind, TOML_NEWLINE)
+        call read_token(tokenizer)
+        call assert_eq(ts, tokenizer%tok_kind, "=")
 
-        call read_token(content, ind, token)
-        call assert_eq(ts, token%kind, TOML_IDENT)
-        call assert_eq(ts, token%content, "hex_int")
+        call read_token(tokenizer)
+        call assert_eq(ts, tokenizer%tok_kind, "int_dec")
+        call assert_eq(ts, tokenizer%content, "10000")
 
-        call read_token(content, ind, token)
-        call assert_eq(ts, token%kind, TOML_EQ)
+        call read_token(tokenizer)
+        call assert_eq(ts, tokenizer%tok_kind, "newline")
 
-        call read_token(content, ind, token)
-        call assert_eq(ts, token%kind, TOML_INT_HEX)
-        call assert_eq(ts, token%content, "deadbeef")
+        call read_token(tokenizer)
+        call assert_eq(ts, tokenizer%tok_kind, "ident")
+        call assert_eq(ts, tokenizer%content, "hex_int")
 
-        call read_token(content, ind, token)
-        call assert_eq(ts, token%kind, TOML_NEWLINE)
+        call read_token(tokenizer)
+        call assert_eq(ts, tokenizer%tok_kind, "=")
 
-        call read_token(content, ind, token)
-        call assert_eq(ts, token%kind, TOML_IDENT)
-        call assert_eq(ts, token%content, "bin_int")
+        call read_token(tokenizer)
+        call assert_eq(ts, tokenizer%tok_kind, "int_hex")
+        call assert_eq(ts, tokenizer%content, "deadbeef")
 
-        call read_token(content, ind, token)
-        call assert_eq(ts, token%kind, TOML_EQ)
+        call read_token(tokenizer)
+        call assert_eq(ts, tokenizer%tok_kind, "newline")
 
-        call read_token(content, ind, token)
-        call assert_eq(ts, token%kind, TOML_INT_BIN)
-        call assert_eq(ts, token%content, "01")
+        call read_token(tokenizer)
+        call assert_eq(ts, tokenizer%tok_kind, "ident")
+        call assert_eq(ts, tokenizer%content, "bin_int")
 
-        call read_token(content, ind, token)
-        call assert_eq(ts, token%kind, TOML_NEWLINE)
+        call read_token(tokenizer)
+        call assert_eq(ts, tokenizer%tok_kind, "=")
 
-        call read_token(content, ind, token)
-        call assert_eq(ts, token%kind, TOML_IDENT)
-        call assert_eq(ts, token%content, "oct_int")
+        call read_token(tokenizer)
+        call assert_eq(ts, tokenizer%tok_kind, "int_bin")
+        call assert_eq(ts, tokenizer%content, "01")
 
-        call read_token(content, ind, token)
-        call assert_eq(ts, token%kind, TOML_EQ)
+        call read_token(tokenizer)
+        call assert_eq(ts, tokenizer%tok_kind, "newline")
 
-        call read_token(content, ind, token)
-        call assert_eq(ts, token%kind, TOML_INT_OCT)
-        call assert_eq(ts, token%content, "755")
+        call read_token(tokenizer)
+        call assert_eq(ts, tokenizer%tok_kind, "ident")
+        call assert_eq(ts, tokenizer%content, "oct_int")
 
-        call read_token(content, ind, token)
-        call assert_eq(ts, token%kind, TOML_NEWLINE)
+        call read_token(tokenizer)
+        call assert_eq(ts, tokenizer%tok_kind, "=")
 
-        call read_token(content, ind, token)
-        call assert_eq(ts, token%kind, TOML_IDENT)
-        call assert_eq(ts, token%content, "f1")
+        call read_token(tokenizer)
+        call assert_eq(ts, tokenizer%tok_kind, "int_oct")
+        call assert_eq(ts, tokenizer%content, "755")
 
-        call read_token(content, ind, token)
-        call assert_eq(ts, token%kind, TOML_EQ)
+        call read_token(tokenizer)
+        call assert_eq(ts, tokenizer%tok_kind, "newline")
 
-        call read_token(content, ind, token)
-        call assert_eq(ts, token%kind, TOML_FLOAT)
-        call assert_eq(ts, token%content, "3.14159d0")
+        call read_token(tokenizer)
+        call assert_eq(ts, tokenizer%tok_kind, "ident")
+        call assert_eq(ts, tokenizer%content, "f1")
 
-        call read_token(content, ind, token)
-        call assert_eq(ts, token%kind, TOML_NEWLINE)
+        call read_token(tokenizer)
+        call assert_eq(ts, tokenizer%tok_kind, "=")
 
-        call read_token(content, ind, token)
-        call assert_eq(ts, token%kind, TOML_IDENT)
-        call assert_eq(ts, token%content, "f2")
+        call read_token(tokenizer)
+        call assert_eq(ts, tokenizer%tok_kind, "float")
+        call assert_eq(ts, tokenizer%content, "3.14159d-20")
 
-        call read_token(content, ind, token)
-        call assert_eq(ts, token%kind, TOML_EQ)
+        call read_token(tokenizer)
+        call assert_eq(ts, tokenizer%tok_kind, "newline")
 
-        call read_token(content, ind, token)
-        call assert_eq(ts, token%kind, TOML_FLOAT)
-        call assert_eq(ts, token%content, "inf")
+        call read_token(tokenizer)
+        call assert_eq(ts, tokenizer%tok_kind, "ident")
+        call assert_eq(ts, tokenizer%content, "f2")
 
-        call read_token(content, ind, token)
-        call assert_eq(ts, token%kind, TOML_NEWLINE)
+        call read_token(tokenizer)
+        call assert_eq(ts, tokenizer%tok_kind, "=")
 
-        call read_token(content, ind, token)
-        call assert_eq(ts, token%kind, TOML_IDENT)
-        call assert_eq(ts, token%content, "f3")
+        call read_token(tokenizer)
+        call assert_eq(ts, tokenizer%tok_kind, "float")
+        call assert_eq(ts, tokenizer%content, "inf")
 
-        call read_token(content, ind, token)
-        call assert_eq(ts, token%kind, TOML_EQ)
+        call read_token(tokenizer)
+        call assert_eq(ts, tokenizer%tok_kind, "newline")
 
-        call read_token(content, ind, token)
-        call assert_eq(ts, token%kind, TOML_FLOAT)
-        call assert_eq(ts, token%content, "nan")
+        call read_token(tokenizer)
+        call assert_eq(ts, tokenizer%tok_kind, "ident")
+        call assert_eq(ts, tokenizer%content, "f3")
 
-        call read_token(content, ind, token)
-        call assert_eq(ts, token%kind, TOML_NEWLINE)
+        call read_token(tokenizer)
+        call assert_eq(ts, tokenizer%tok_kind, "=")
 
-        call read_token(content, ind, token)
-        call assert_eq(ts, token%kind, TOML_IDENT)
-        call assert_eq(ts, token%content, "i1")
+        call read_token(tokenizer)
+        call assert_eq(ts, tokenizer%tok_kind, "float")
+        call assert_eq(ts, tokenizer%content, "nan")
 
-        call read_token(content, ind, token)
-        call assert_eq(ts, token%kind, TOML_EQ)
+        call read_token(tokenizer)
+        call assert_eq(ts, tokenizer%tok_kind, "newline")
 
-        call read_token(content, ind, token)
-        call assert_eq(ts, token%kind, TOML_INT_HEX)
-        call assert_eq(ts, token%content, "2f")
+        call read_token(tokenizer)
+        call assert_eq(ts, tokenizer%tok_kind, "ident")
+        call assert_eq(ts, tokenizer%content, "i1")
 
-        call read_token(content, ind, token)
-        call assert_eq(ts, token%kind, TOML_NEWLINE)
+        call read_token(tokenizer)
+        call assert_eq(ts, tokenizer%tok_kind, "=")
 
-        call read_token(content, ind, token)
-        call assert_eq(ts, token%kind, TOML_IDENT)
-        call assert_eq(ts, token%content, "f4")
+        call read_token(tokenizer)
+        call assert_eq(ts, tokenizer%tok_kind, "int_hex")
+        call assert_eq(ts, tokenizer%content, "2f")
 
-        call read_token(content, ind, token)
-        call assert_eq(ts, token%kind, TOML_EQ)
+        call read_token(tokenizer)
+        call assert_eq(ts, tokenizer%tok_kind, "newline")
 
-        call read_token(content, ind, token)
-        call assert_eq(ts, token%kind, TOML_FLOAT)
-        call assert_eq(ts, token%content, "-12.8")
+        call read_token(tokenizer)
+        call assert_eq(ts, tokenizer%tok_kind, "ident")
+        call assert_eq(ts, tokenizer%content, "f4")
 
-        call read_token(content, ind, token)
-        call assert_eq(ts, token%kind, TOML_NEWLINE)
+        call read_token(tokenizer)
+        call assert_eq(ts, tokenizer%tok_kind, "=")
 
-        call read_token(content, ind, token)
-        call assert_eq(ts, token%kind, TOML_IDENT)
-        call assert_eq(ts, token%content, "f5")
+        call read_token(tokenizer)
+        call assert_eq(ts, tokenizer%tok_kind, "float")
+        call assert_eq(ts, tokenizer%content, "-12.8")
 
-        call read_token(content, ind, token)
-        call assert_eq(ts, token%kind, TOML_EQ)
+        call read_token(tokenizer)
+        call assert_eq(ts, tokenizer%tok_kind, "newline")
 
-        call read_token(content, ind, token)
-        call assert_eq(ts, token%kind, TOML_FLOAT)
-        call assert_eq(ts, token%content, "nan")
+        call read_token(tokenizer)
+        call assert_eq(ts, tokenizer%tok_kind, "ident")
+        call assert_eq(ts, tokenizer%content, "f5")
 
-        call read_token(content, ind, token)
-        call assert_eq(ts, token%kind, TOML_NEWLINE)
+        call read_token(tokenizer)
+        call assert_eq(ts, tokenizer%tok_kind, "=")
 
-        call read_token(content, ind, token)
-        call assert_eq(ts, token%kind, TOML_IDENT)
-        call assert_eq(ts, token%content, "f6")
+        call read_token(tokenizer)
+        call assert_eq(ts, tokenizer%tok_kind, "float")
+        call assert_eq(ts, tokenizer%content, "nan")
 
-        call read_token(content, ind, token)
-        call assert_eq(ts, token%kind, TOML_EQ)
+        call read_token(tokenizer)
+        call assert_eq(ts, tokenizer%tok_kind, "newline")
 
-        call read_token(content, ind, token)
-        call assert_eq(ts, token%kind, TOML_FLOAT)
-        call assert_eq(ts, token%content, "-inf")
+        call read_token(tokenizer)
+        call assert_eq(ts, tokenizer%tok_kind, "ident")
+        call assert_eq(ts, tokenizer%content, "f6")
 
-        call read_token(content, ind, token)
-        call assert_eq(ts, token%kind, TOML_NEWLINE)
+        call read_token(tokenizer)
+        call assert_eq(ts, tokenizer%tok_kind, "=")
 
-        call read_token(content, ind, token)
-        call assert_eq(ts, token%kind, TOML_PERIOD)
+        call read_token(tokenizer)
+        call assert_eq(ts, tokenizer%tok_kind, "float")
+        call assert_eq(ts, tokenizer%content, "-inf")
 
-        call read_token(content, ind, token)
-        call assert_eq(ts, token%kind, TOML_INT_DEC)
-        call assert_eq(ts, token%content, "7")
+        call read_token(tokenizer)
+        call assert_eq(ts, tokenizer%tok_kind, "newline")
 
-        call read_token(content, ind, token)
-        call assert_eq(ts, token%kind, TOML_NEWLINE)
+        call read_token(tokenizer)
+        call assert_eq(ts, tokenizer%tok_kind, ".")
 
-        call read_token(content, ind, token)
-        call assert_eq(ts, token%kind, TOML_TOKEN_ERROR)
-        call assert_eq(ts, token%content, "7.")
+        call read_token(tokenizer)
+        call assert_eq(ts, tokenizer%tok_kind, "int_dec")
+        call assert_eq(ts, tokenizer%content, "7")
 
-        call read_token(content, ind, token)
-        call assert_eq(ts, token%kind, TOML_NEWLINE)
+        call read_token(tokenizer)
+        call assert_eq(ts, tokenizer%tok_kind, "newline")
 
-        call read_token(content, ind, token)
-        call assert_eq(ts, token%kind, TOML_TOKEN_ERROR)
-        call assert_eq(ts, token%content, "1dzuew")
+        call read_token(tokenizer)
+        call assert_eq(ts, tokenizer%tok_kind, "error")
+        call assert_eq(ts, tokenizer%content, "7.")
 
-        call read_token(content, ind, token)
-        call assert_eq(ts, token%kind, TOML_NEWLINE)
+        call read_token(tokenizer)
+        call assert_eq(ts, tokenizer%tok_kind, "newline")
 
-        call read_token(content, ind, token)
-        call assert_eq(ts, token%kind, TOML_TOKEN_ERROR)
-        call assert_eq(ts, token%content, "3.e+20")
+        call read_token(tokenizer)
+        call assert_eq(ts, tokenizer%tok_kind, "error")
+        call assert_eq(ts, tokenizer%content, "1dzuew")
 
-        call read_token(content, ind, token)
-        call assert_eq(ts, token%kind, TOML_NEWLINE)
+        call read_token(tokenizer)
+        call assert_eq(ts, tokenizer%tok_kind, "newline")
 
-        call read_token(content, ind, token)
-        call assert_eq(ts, token%kind, TOML_TOKEN_ERROR)
-        call assert_eq(ts, token%content, "2e.+0")
+        call read_token(tokenizer)
+        call assert_eq(ts, tokenizer%tok_kind, "error")
+        call assert_eq(ts, tokenizer%content, "3.e+20")
 
-        call read_token(content, ind, token)
-        call assert_eq(ts, token%kind, TOML_NEWLINE)
+        call read_token(tokenizer)
+        call assert_eq(ts, tokenizer%tok_kind, "newline")
 
-        call read_token(content, ind, token)
-        call assert_eq(ts, token%kind, TOML_TOKEN_ERROR)
-        call assert_eq(ts, token%content, "//")
+        call read_token(tokenizer)
+        call assert_eq(ts, tokenizer%tok_kind, "error")
+        call assert_eq(ts, tokenizer%content, "2e.+0")
 
-        call read_token(content, ind, token)
-        call assert_eq(ts, token%kind, TOML_EOF)
+        call read_token(tokenizer)
+        call assert_eq(ts, tokenizer%tok_kind, "newline")
+
+        call read_token(tokenizer)
+        call assert_eq(ts, tokenizer%tok_kind, "error")
+        call assert_eq(ts, tokenizer%content, "//")
+
+        call read_token(tokenizer)
+        call assert_eq(ts, tokenizer%tok_kind, "eof")
 
         testsets = [testsets, ts]
     end block
+
+    block
+        type(toml_object):: obj
+        type(Testset):: ts
+
+        call ts%init("Basics 1")
+        obj = parse_string_2("a = 1")
+
+        testsets = [testsets, ts]
+    end block
+
+    input = parse_file("test/tests.toml")
 
     ! Some basic key-value pair tests
     block
