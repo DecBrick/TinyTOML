@@ -1187,8 +1187,6 @@ module TinyTOML
 
                     line = strip(line)
 
-
-                    write(*,'(I3,A)') iachar(line(len(line):len(line))), line
                     pair%value = pair%value // line
 
                     if (line(len(line):len(line)) .eq. ']') then 
@@ -1419,11 +1417,6 @@ module TinyTOML
         ! This line has a key-value pair
         key = strip(str(1:equals_ind-1))
         val = strip(str(equals_ind+1:len(str))) 
-        write(*,'(I2, a)') equals_ind, str
-        write(*,'(a)') str(1:equals_ind-1)
-        write(*,'(a)') key
-        write(*,'(a)') str(equals_ind+1:len(str))
-        write(*,'(a)') val
         parse_result = parse_value(val)
         pair%error_code = parse_result%error_code
         pair%type = parse_result%type
