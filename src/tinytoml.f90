@@ -178,7 +178,7 @@ module TinyTOML
 
     pure logical function isspace(c)
         character(len = 1), intent(in):: c
-        isspace = (c .eq. ' ') .or. (c .eq. new_line('a')) .or. (c .eq. char(9))
+        isspace = (c .eq. ' ') .or. (c .eq. new_line('a')) .or. (c .eq. char(9)) .or. (c .eq. char(13))
     end function
 
     pure integer(i32) function findfirst(needle, haystack)
@@ -204,12 +204,13 @@ module TinyTOML
 
         iL=1
         iR=len(str)
-    
+
+        ! first check for 0 length strings, if empty should skip
         if (len(str) == 0) then
             return
         endif
 
-        do iL=1, len(str) 
+        do iL=1, iR
             if (.not. isspace(str(iL:iL))) then
                 exit
             endif
@@ -222,7 +223,6 @@ module TinyTOML
                 endif
             end do
         end if
-
         s = str(iL:iR)
     end function
 
@@ -714,7 +714,7 @@ module TinyTOML
     function read_file(file) result(contents)
         character(len=*), intent(in):: file
         character(len = :), allocatable:: contents
-        integer(i32):: io, unit, file_size
+        integer(i32):: unit, file_size
         logical:: exists
 
         inquire(file = file, exist = exists)
@@ -739,7 +739,6 @@ module TinyTOML
         type(toml_object):: parse_tree
 
         file_contents = read_file(file)
-
         parse_tree = parse_string(file_contents)
 
     end function
@@ -758,7 +757,7 @@ module TinyTOML
         character(len = *), intent(in):: toml_str
         integer(i32), intent(inout):: start_pos, line_num
         character(len = :), allocatable:: line
-        integer(i32):: i, strlen
+        integer(i32):: i
 
         do i = start_pos,len(toml_str)
             if (toml_str(i:i) == C_NEWLINE) exit
@@ -902,8 +901,8 @@ module TinyTOML
     subroutine read_number(t)
         type(toml_tokenizer), intent(inout):: t
         character:: c
-        logical:: decimal_found, exp_allowed, underscore_allowed, sign_allowed, positive 
-        integer(i32):: error_code, tok_start_pos, num_start_pos
+        logical:: decimal_found, exp_allowed, sign_allowed, positive 
+        integer(i32):: tok_start_pos, num_start_pos
 
         decimal_found = .false.
         exp_allowed = .false.
@@ -1082,7 +1081,7 @@ module TinyTOML
 
         c = t%advance()
 
-        1 return
+        return
 
     end subroutine
 
@@ -1133,10 +1132,9 @@ module TinyTOML
         character(len = :), allocatable:: key, val, typ, line
         type(toml_object):: pair
 
-        integer(i32):: nlines, comment_ind, error_code
+        integer(i32):: comment_ind, error_code
         integer(i32):: line_start = 1, num_tokens = 0, line_num = 0
 
-        logical:: in_array = .false.
 
         allocate(tokens(len(toml_str)))
 
@@ -1155,11 +1153,10 @@ module TinyTOML
                 ! Line has no comment. Just trim whitespace from line
                 line = strip(line)
             else
+                if (comment_ind == 1) cycle ! account for lines that are just comments
                 line = strip(line(1:comment_ind-1))
             endif
-
-            ! strip all blank lines
-
+            
             ! Try parsing as key-value pair
             pair = parse_key_value_pair(line, line_num)
             error_code = pair%error_code
@@ -1172,8 +1169,7 @@ module TinyTOML
             elseif (error_code == NO_CLOSING_BRACKET_ARRAY) then
 
                 ! Read lines until we find one that ends in a right bracket
-                do
-
+                do 
                     if (line_start .ge. len(toml_str)) then
                         exit
                     end if
@@ -1197,7 +1193,7 @@ module TinyTOML
 
             elseif (error_code == NO_EQUALS_SIGN_IN_KEY) then
                 key = line
-                val = ""
+                val = " " ! adding a space fixes a small memory bug when assigning 
 
                 ! Check for table header
                 if (key(1:1) /= "[") then
@@ -1230,8 +1226,8 @@ module TinyTOML
                     endif
                 endif
 
-                if (typ /= "unknown") error_code = SUCCESS
 
+                if (typ /= "unknown") error_code = SUCCESS
                 if (error_code == SUCCESS) then
                     num_tokens = num_tokens + 1
                     tokens(num_tokens)%key = strip(key)
@@ -1244,7 +1240,6 @@ module TinyTOML
             if (ERROR_CODE /= success) then
                 call parse_error(ERROR_CODE, line_num)
             endif
-
         end do
 
         call move_alloc(tokens, tmp)
@@ -1403,7 +1398,6 @@ module TinyTOML
 
         ! Find first occurance of an equals sign in the line
         equals_ind = findfirst("=", str)
-
         if (equals_ind == 0) then
             ! No key-value pair found
             pair%error_code = NO_EQUALS_SIGN_IN_KEY
@@ -1412,11 +1406,9 @@ module TinyTOML
             pair%type = "unknown"
             return
         endif
-
         ! This line has a key-value pair
         key = strip(str(1:equals_ind-1))
-        val = strip(str(equals_ind+1:len(str)))
-
+        val = strip(str(equals_ind+1:len(str))) 
         parse_result = parse_value(val)
         pair%error_code = parse_result%error_code
         pair%type = parse_result%type
@@ -1542,9 +1534,10 @@ module TinyTOML
         plusminus_allowed = .true.
 
         l = len(str)
-
         ! Check for octal, hex, binary
-        if (l .gt. 2 .and. str(1:2) .eq. '0x') then
+        if (l .lt. 2) then ! avoid trying to index greater than str length 
+            int_kind = "dec"
+        else if (l .gt. 2 .and. str(1:2) .eq. '0x') then
             int_kind = "hex"
         else if (l .gt. 2 .and. str(1:2) .eq. '0o') then
             int_kind = "oct"
