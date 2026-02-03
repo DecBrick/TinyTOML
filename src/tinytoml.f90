@@ -178,7 +178,7 @@ module TinyTOML
 
     pure logical function isspace(c)
         character(len = 1), intent(in):: c
-        isspace = (c .eq. ' ') .or. (c .eq. new_line('a')) .or. (c .eq. char(9))
+        isspace = (c .eq. ' ') .or. (c .eq. new_line('a')) .or. (c .eq. char(9)) .or. (c .eq. char(13))
     end function
 
     pure integer(i32) function findfirst(needle, haystack)
@@ -202,36 +202,28 @@ module TinyTOML
         character(len = :), allocatable:: s
         integer(i32):: iL, iR
 
+        iL=1
+        iR=len(str)
+
         ! first check for 0 length strings, if empty should skip
         if (len(str) == 0) then
             return
         endif
 
-        ! remove end of line non-space, non-letter, non-number characters (such as carriage return)
-        ! ascii 32 is the space character with all values above it being numbers/letters and values below being things like tab  
-        if (iachar(str(len(str):len(str))) < 32) then 
-            s = str(1:len(str)-1) 
-        else 
-            s = str
-        endif
-
-        iL=1
-        iR=len(s)
-
         do iL=1, iR
-            if (.not. isspace(s(iL:iL))) then
+            if (.not. isspace(str(iL:iL))) then
                 exit
             endif
         end do
 
         if (iL .lt. iR) then
-            do iR = len(s), iL, -1
-                if (.not. isspace(s(iR:iR))) then
+            do iR = len(str), iL, -1
+                if (.not. isspace(str(iR:iR))) then
                     exit
                 endif
             end do
         end if
-        s = s(iL:iR)
+        s = str(iL:iR)
     end function
 
     pure integer(i32) function count(str, ch)
@@ -1161,7 +1153,7 @@ module TinyTOML
                 ! Line has no comment. Just trim whitespace from line
                 line = strip(line)
             else
-                if (comment_ind == 1) cycle !account for lines that are just comments
+                if (comment_ind == 1) cycle ! account for lines that are just comments
                 line = strip(line(1:comment_ind-1))
             endif
             
@@ -1201,7 +1193,7 @@ module TinyTOML
 
             elseif (error_code == NO_EQUALS_SIGN_IN_KEY) then
                 key = line
-                val = " "!adding a space fixes a small memory bug when assigning 
+                val = " " ! adding a space fixes a small memory bug when assigning 
 
                 ! Check for table header
                 if (key(1:1) /= "[") then
@@ -1543,7 +1535,7 @@ module TinyTOML
 
         l = len(str)
         ! Check for octal, hex, binary
-        if (l .lt. 2) then!avoid trying to index greater than str length 
+        if (l .lt. 2) then ! avoid trying to index greater than str length 
             int_kind = "dec"
         else if (l .gt. 2 .and. str(1:2) .eq. '0x') then
             int_kind = "hex"
