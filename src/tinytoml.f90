@@ -202,28 +202,36 @@ module TinyTOML
         character(len = :), allocatable:: s
         integer(i32):: iL, iR
 
-        iL=1
-        iR=len(str)
-    
+        ! first check for 0 length strings, if empty should skip
         if (len(str) == 0) then
             return
         endif
 
-        do iL=1, len(str) 
-            if (.not. isspace(str(iL:iL))) then
+        ! remove end of line non-space, non-letter, non-number characters (such as carriage return)
+        ! ascii 32 is the space character with all values above it being numbers/letters and values below being things like tab  
+        if (iachar(str(len(str):len(str))) < 32) then 
+            s = str(1:len(str)-1) 
+        else 
+            s = str
+        endif
+
+        iL=1
+        iR=len(s)
+
+        do iL=1, iR
+            if (.not. isspace(s(iL:iL))) then
                 exit
             endif
         end do
 
         if (iL .lt. iR) then
-            do iR = len(str), iL, -1
-                if (.not. isspace(str(iR:iR))) then
+            do iR = len(s), iL, -1
+                if (.not. isspace(s(iR:iR))) then
                     exit
                 endif
             end do
         end if
-
-        s = str(iL:iR)
+        s = s(iL:iR)
     end function
 
     pure integer(i32) function count(str, ch)
@@ -1081,7 +1089,7 @@ module TinyTOML
 
         c = t%advance()
 
-        1 return
+        return
 
     end subroutine
 
@@ -1156,9 +1164,7 @@ module TinyTOML
                 if (comment_ind == 1) cycle !account for lines that are just comments
                 line = strip(line(1:comment_ind-1))
             endif
-
-            ! strip all blank lines
-
+            
             ! Try parsing as key-value pair
             pair = parse_key_value_pair(line, line_num)
             error_code = pair%error_code
@@ -1171,8 +1177,7 @@ module TinyTOML
             elseif (error_code == NO_CLOSING_BRACKET_ARRAY) then
 
                 ! Read lines until we find one that ends in a right bracket
-                do
-
+                do 
                     if (line_start .ge. len(toml_str)) then
                         exit
                     end if
@@ -1182,6 +1187,8 @@ module TinyTOML
 
                     line = strip(line)
 
+
+                    write(*,'(I3,A)') iachar(line(len(line):len(line))), line
                     pair%value = pair%value // line
 
                     if (line(len(line):len(line)) .eq. ']') then 
@@ -1243,7 +1250,6 @@ module TinyTOML
             if (ERROR_CODE /= success) then
                 call parse_error(ERROR_CODE, line_num)
             endif
-
         end do
 
         call move_alloc(tokens, tmp)
@@ -1402,7 +1408,6 @@ module TinyTOML
 
         ! Find first occurance of an equals sign in the line
         equals_ind = findfirst("=", str)
-
         if (equals_ind == 0) then
             ! No key-value pair found
             pair%error_code = NO_EQUALS_SIGN_IN_KEY
@@ -1411,10 +1416,14 @@ module TinyTOML
             pair%type = "unknown"
             return
         endif
-
         ! This line has a key-value pair
         key = strip(str(1:equals_ind-1))
         val = strip(str(equals_ind+1:len(str))) 
+        write(*,'(I2, a)') equals_ind, str
+        write(*,'(a)') str(1:equals_ind-1)
+        write(*,'(a)') key
+        write(*,'(a)') str(equals_ind+1:len(str))
+        write(*,'(a)') val
         parse_result = parse_value(val)
         pair%error_code = parse_result%error_code
         pair%type = parse_result%type
